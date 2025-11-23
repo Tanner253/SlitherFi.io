@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from './components/useWallet';
@@ -11,6 +11,13 @@ import { createPaymentPayload, encodePaymentPayload, type PaymentRequiredRespons
 import { signChallenge, encodeAuthHeader, type AuthRequiredResponse, type AuthChallenge } from './lib/x403';
 import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
+
+interface ChatMessage {
+  id: string;
+  username: string;
+  message: string;
+  timestamp: number;
+}
 
 interface GameMode {
   tier: string;
@@ -40,6 +47,7 @@ export default function HomePage() {
   const router = useRouter();
   const { connected, walletAddress, disconnect, connect } = useWallet();
   const solanaWallet = useSolanaWallet();
+  const chatEndRef = useRef<HTMLDivElement>(null);
   
   const [gameModes, setGameModes] = useState<GameMode[]>([]);
   const [lobbies, setLobbies] = useState<LobbyStatus[]>([]);
@@ -64,23 +72,91 @@ export default function HomePage() {
   // Profile Modal State
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Chat State
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+
+  // Socket connection for real-time updates and chat
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
-        const response = await fetch(`${serverUrl}/api/game-modes`);
-        const data = await response.json();
+    const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+
+    // Initial fetch
+    fetch(`${serverUrl}/api/game-modes`)
+      .then(res => res.json())
+      .then(data => {
         setGameModes(data.modes || []);
         setLobbies(data.lobbies || []);
-      } catch (error) {
-        console.error('Failed to fetch game modes:', error);
-      }
-    };
+      })
+      .catch(console.error);
 
-    fetchData();
-    const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
+    // Create socket connection
+    const socket = require('socket.io-client').io(serverUrl);
+
+    socket.on('lobbyUpdate', (update: LobbyStatus) => {
+      setLobbies(prev => {
+        const index = prev.findIndex(l => l.tier === update.tier);
+        if (index >= 0) {
+          if (JSON.stringify(prev[index]) === JSON.stringify(update)) {
+            return prev; // No change
+          }
+          const newLobbies = [...prev];
+          newLobbies[index] = update;
+          return newLobbies;
+        } else {
+          return [...prev, update];
+        }
+      });
+    });
+
+    socket.on('chatMessage', (msg: { username: string; message: string }) => {
+      const newMsg: ChatMessage = {
+        id: Date.now().toString(),
+        username: msg.username,
+        message: msg.message,
+        timestamp: Date.now()
+      };
+      setChatMessages(prev => {
+        const newMessages = [...prev, newMsg];
+        return newMessages.slice(-100); // Keep only last 100
+      });
+    });
+
+    // Store socket globally for chat
+    (window as any).gameSocket = socket;
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
+
+  // Load chat history
+  useEffect(() => {
+    const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+    fetch(`${serverUrl}/api/chat`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.messages && Array.isArray(data.messages)) {
+          const recentMessages = data.messages.slice(-100).map((msg: any) => ({
+            id: msg._id || msg.timestamp?.toString() || Date.now().toString(),
+            username: msg.username,
+            message: msg.message,
+            timestamp: msg.timestamp
+          }));
+          setChatMessages(recentMessages);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    if (showChat) {
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  }, [showChat, chatMessages]);
 
   // Load session token from localStorage on mount
   useEffect(() => {
@@ -206,6 +282,26 @@ export default function HomePage() {
       setSelectedMode(null);
     }
   }, [connected]);
+
+  // Chat function
+  const sendChatMessage = () => {
+    if (!connected) {
+      setToastMessage('⚠️ Connect wallet to chat');
+      return;
+    }
+    
+    if (!chatInput.trim() || !playerName.trim()) return;
+    
+    const socket = (window as any).gameSocket;
+    if (socket) {
+      socket.emit('chatMessage', {
+        username: playerName,
+        message: chatInput.trim(),
+        walletAddress: walletAddress || null
+      });
+      setChatInput('');
+    }
+  };
 
   // Auth modal handlers
   const handleAuthSign = async () => {
@@ -1422,6 +1518,96 @@ export default function HomePage() {
             </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Chat Bubble */}
+      <motion.button
+        onClick={() => setShowChat(true)}
+        className="fixed bottom-4 md:bottom-6 right-4 md:right-6 z-40 w-12 h-12 md:w-14 md:h-14 bg-gradient-to-r from-green-600 to-emerald-600 rounded-full shadow-2xl flex items-center justify-center hover:from-green-500 hover:to-emerald-500 transition-all"
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        animate={{ y: [0, -5, 0] }}
+        transition={{ duration: 2, repeat: Infinity }}
+      >
+        <svg className="w-6 h-6 md:w-7 md:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+        {chatMessages.length > 0 && (
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-xs font-bold text-white">
+            {chatMessages.length > 9 ? '9+' : chatMessages.length}
+          </div>
+        )}
+      </motion.button>
+
+      {/* Chat Modal */}
+      {showChat && (
+        <div 
+          className="fixed inset-0 z-50 flex items-end md:items-end md:justify-end p-2 md:p-4 bg-black/40 backdrop-blur-sm"
+          onClick={() => setShowChat(false)}
+        >
+          <motion.div 
+            className="w-full md:max-w-md bg-gradient-to-br from-green-950 via-emerald-900 to-green-950 backdrop-blur-xl border-2 border-green-700/50 rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden"
+            initial={{ opacity: 0, y: 100 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-green-700 to-emerald-700 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-white font-bold text-base md:text-lg flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                Jungle Chat
+              </h3>
+              <button onClick={() => setShowChat(false)} className="p-1 hover:bg-white/20 rounded transition-colors">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="h-[350px] overflow-y-auto p-4 space-y-2 bg-black/30">
+              {chatMessages.length === 0 ? (
+                <div className="text-center py-16 text-gray-400 text-sm">
+                  <svg className="w-12 h-12 mx-auto mb-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  <p>Be the first to chat!</p>
+                </div>
+              ) : (
+                chatMessages.map((msg) => (
+                  <div key={msg.id} className="bg-green-900/30 rounded-lg p-3 border border-green-700/30">
+                    <span className="text-green-400 font-bold text-sm">{msg.username}:</span>{' '}
+                    <span className="text-gray-200 text-sm">{msg.message}</span>
+                  </div>
+                ))
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            <div className="p-3 bg-green-950/50 border-t border-green-700/30">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
+                  placeholder={connected && playerName.trim() ? "Type a message..." : "Connect wallet to chat..."}
+                  disabled={!connected || !playerName.trim()}
+                  className="flex-1 px-3 py-2 bg-green-950 border border-green-700 rounded-lg focus:outline-none focus:border-green-500 text-white text-sm placeholder-gray-500 disabled:opacity-50"
+                  maxLength={200}
+                />
+                <motion.button
+                  onClick={sendChatMessage}
+                  disabled={!connected || !playerName.trim() || !chatInput.trim()}
+                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg font-bold text-sm disabled:opacity-50 transition-all"
+                  whileHover={{ scale: connected && playerName.trim() && chatInput.trim() ? 1.05 : 1 }}
+                >
+                  Send
+                </motion.button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
