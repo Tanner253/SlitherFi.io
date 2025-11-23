@@ -1058,7 +1058,7 @@ export default function GamePage() {
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [snakes, pellets, camera, killAnimations, leaderboard, myPlayerId, isSpectating, spectatingPlayerId]);
+  }, [snakes, pellets, killAnimations, leaderboard, myPlayerId, isSpectating, spectatingPlayerId]);
 
   // Cleanup old animations periodically (separate from render loop)
   useEffect(() => {
