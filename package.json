@@ -2,13 +2,17 @@
   "name": "slitherfi-game",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "packages/server",
+    "packages/client"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "cd packages/server && npm run dev",
-    "dev:client": "cd packages/client && npm run dev",
+    "dev:server": "npm run dev --workspace=@slitherfi/server",
+    "dev:client": "npm run dev --workspace=@slitherfi/client",
     "build": "npm run build:server && npm run build:client",
-    "build:server": "cd packages/server && npm run build",
-    "build:client": "cd packages/client && npm run build",
+    "build:server": "npm run build --workspace=@slitherfi/server",
+    "build:client": "npm run build --workspace=@slitherfi/client",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/.next packages/*/dist"
   },
   "devDependencies": {
