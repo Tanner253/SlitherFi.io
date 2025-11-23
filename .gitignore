@@ -45,6 +45,9 @@ packages/server/transactions.json
 packages/server/banned-ips.json
 packages/server/wallet-history.json
 packages/server/*.json
+!packages/server/package.json
+!packages/server/package-lock.json
+!packages/server/tsconfig.json
 
 # OS files
 .DS_Store
