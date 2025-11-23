@@ -1,0 +1,99 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+.next/
+dist/
+build/
+out/
+
+# Environment variables & secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# Private keys & certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.cert
+*.crt
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+
+# Database & logs
+*.log
+*.sqlite
+*.sqlite3
+*.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Application-specific sensitive files
+packages/server/transactions.json
+packages/server/banned-ips.json
+packages/server/wallet-history.json
+packages/server/*.json
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# Misc
+.cache/
+.temp/
+.tmp/
+*.tsbuildinfo
+.eslintcache
+
+# Source material (not needed in production)
+../Source_material
+Source_material/
+
+# Wallet backups (CRITICAL - never commit)
+**/wallet-backup*.json
+**/keypair*.json
+**/secret*.txt
+**/private-key*.txt
+
+# MongoDB dumps
+dump/
+*.dump
+
+# Deployment
+.vercel
+.netlify
