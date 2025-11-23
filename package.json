@@ -1,10 +1,7 @@
 {
-  "name": "agarfi-game",
+  "name": "slitherfi-game",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "cd packages/server && npm run dev",
