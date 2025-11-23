@@ -1130,39 +1130,38 @@ io.on('connection', (socket) => {
   // Check if IP is whitelisted (dev/localhost)
   const isWhitelisted = DEV_IP_WHITELIST.includes(fullIP);
   
-  // Block multiple connections from same IP (except whitelisted)
-  if (!isWhitelisted && fullIP !== 'unknown') {
-    const existingConnection = activeConnectionsByIP.get(fullIP);
-    
-    if (existingConnection) {
-      // Check if existing connection is still alive
-      const existingSocket = io.sockets.sockets.get(existingConnection);
+    // Block multiple connections from same IP (except whitelisted)
+    if (!isWhitelisted && fullIP !== 'unknown') {
+      const existingConnection = activeConnectionsByIP.get(fullIP);
       
-      if (existingSocket && existingSocket.connected) {
-        console.log(`🚫 MULTIPLE CONNECTION BLOCKED: ${clientIP}`);
-        console.log(`   Existing connection: ${existingConnection}`);
-        console.log(`   New connection: ${socket.id}`);
-        socket.emit('error', { 
-          message: 'Multiple connections from the same network are not allowed. Please close other tabs.', 
-          code: 429 
-        });
-        socket.disconnect();
-        connectedClients--;
-        return;
-      } else {
-        // Existing connection is dead, clean it up
-        console.log(`🧹 Cleaning up dead connection from ${clientIP}`);
-        activeConnectionsByIP.delete(fullIP);
+      if (existingConnection) {
+        // Check if existing connection is still alive
+        const existingSocket = io.sockets.sockets.get(existingConnection);
+        
+        if (existingSocket && existingSocket.connected) {
+          console.log(`🔄 REPLACING CONNECTION from ${clientIP}`);
+          console.log(`   Closing old: ${existingConnection}`);
+          console.log(`   Accepting new: ${socket.id}`);
+          
+          // Force disconnect old socket to allow new one
+          existingSocket.disconnect(true);
+          
+          // Note: The disconnect handler for the old socket will run, but we overwrite the map below
+          // so the new connection is preserved in activeConnectionsByIP
+        } else {
+          // Existing connection is dead, clean it up
+          console.log(`🧹 Cleaning up dead connection from ${clientIP}`);
+          activeConnectionsByIP.delete(fullIP);
+        }
       }
+      
+      // Track this connection
+      activeConnectionsByIP.set(fullIP, socket.id);
+      console.log(`🔌 NEW CONNECTION: ${socket.id} from ${clientIP} (Total: ${connectedClients})`);
+      console.log(`   IP tracked: ${maskIP(fullIP)} → ${socket.id}`);
+    } else {
+      console.log(`🔌 NEW CONNECTION: ${socket.id} from ${clientIP} (Total: ${connectedClients}) ${isWhitelisted ? '[WHITELISTED]' : ''}`);
     }
-    
-    // Track this connection
-    activeConnectionsByIP.set(fullIP, socket.id);
-    console.log(`🔌 NEW CONNECTION: ${socket.id} from ${clientIP} (Total: ${connectedClients})`);
-    console.log(`   IP tracked: ${maskIP(fullIP)} → ${socket.id}`);
-  } else {
-    console.log(`🔌 NEW CONNECTION: ${socket.id} from ${clientIP} (Total: ${connectedClients}) ${isWhitelisted ? '[WHITELISTED]' : ''}`);
-  }
   
   broadcastStats();
 
@@ -1518,6 +1517,8 @@ io.on('connection', (socket) => {
       let playerName = playerIdToRemove;
       let shouldRefund = false;
       let lobby = null;
+      let walletAddress = undefined;
+      let tier = '';
       
       if (lobbyId) {
         // Access lobby directly from lobbyManager's private lobbies map
@@ -1525,18 +1526,32 @@ io.on('connection', (socket) => {
         if (lobby) {
           const player = lobby.players.get(playerIdToRemove);
           playerName = player?.name || playerIdToRemove;
+          tier = lobby.tier;
           
           // Check if refund should be processed (game not started yet)
           shouldRefund = lobby.status === 'waiting' || lobby.status === 'countdown';
         }
+        walletAddress = playerWallets.get(playerIdToRemove);
       }
       
       console.log(`👋 PLAYER LEFT: ${playerName} disconnected`);
       
+      // CLEAN UP TRACKING IMMEDIATELY (Prevent blocking re-joins)
+      lobbyManager.leaveLobby(playerIdToRemove);
+      playerToLobby.delete(playerIdToRemove);
+      
+      // Remove from IP tracking
+      if (ipString !== 'unknown' && activePlayersByIP.has(ipString)) {
+        activePlayersByIP.get(ipString)!.delete(playerIdToRemove);
+        if (activePlayersByIP.get(ipString)!.size === 0) {
+          activePlayersByIP.delete(ipString);
+        }
+        console.log(`📊 IP cleared: ${maskIP(ipString)} (${activePlayersByIP.get(ipString)?.size || 0} remaining)`);
+      }
+
       // Process refund if applicable (and not already refunded)
+      // Done AFTER clearing tracking so user is free to join new games
       if (shouldRefund && lobby && entryFeeService && !refundedPlayers.has(playerIdToRemove)) {
-        const walletAddress = playerWallets.get(playerIdToRemove);
-        const tier = lobby.tier;
         const gameMode = config.gameModes.find(m => m.tier === tier);
         
         if (walletAddress && gameMode?.requiresPayment && tier !== 'dream') {
@@ -1547,6 +1562,7 @@ io.on('connection', (socket) => {
           // Mark as refunded IMMEDIATELY to prevent race conditions
           refundedPlayers.add(playerIdToRemove);
           
+          // Note: await here is fine since we've already cleared tracking
           const refundResult = await entryFeeService.refundEntryFee(
             playerIdToRemove,
             playerName,
@@ -1570,23 +1586,9 @@ io.on('connection', (socket) => {
         console.log(`✅ Skipping refund for ${playerName} - already refunded`);
       }
       
-      lobbyManager.leaveLobby(playerIdToRemove);
-      playerToLobby.delete(playerIdToRemove);
-      
       // Clean up refund tracking after disconnect (prevent memory leak)
       if (refundedPlayers.has(playerIdToRemove)) {
         refundedPlayers.delete(playerIdToRemove);
-      }
-      
-      // Remove from IP tracking
-      const ipString = getClientIP(socket);
-      
-      if (ipString !== 'unknown' && activePlayersByIP.has(ipString)) {
-        activePlayersByIP.get(ipString)!.delete(playerIdToRemove);
-        if (activePlayersByIP.get(ipString)!.size === 0) {
-          activePlayersByIP.delete(ipString);
-        }
-        console.log(`📊 IP cleared: ${maskIP(ipString)} (${activePlayersByIP.get(ipString)?.size || 0} remaining)`);
       }
       
       // Keep wallet address for payout even if disconnected
