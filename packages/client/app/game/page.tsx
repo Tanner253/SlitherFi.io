@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
+import { useWallet } from '@solana/wallet-adapter-react';
 
 interface SnakeSegment {
   x: number;
@@ -64,6 +65,10 @@ interface GameEndResult {
 }
 
 export default function GamePage() {
+  const { publicKey } = useWallet();
+  const walletAddress = publicKey?.toBase58();
+  const [usernameLoaded, setUsernameLoaded] = useState(false);
+  
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const socketRef = useRef<Socket | null>(null);
   const router = useRouter();
@@ -118,7 +123,6 @@ export default function GamePage() {
     const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
     
     // Load username
-    const walletAddress = localStorage.getItem('playerWallet');
     if (walletAddress) {
       fetch(`${serverUrl}/api/user/${walletAddress}`)
         .then(res => res.json())
@@ -126,8 +130,14 @@ export default function GamePage() {
           if (data.user && data.user.username) {
             setCurrentUsername(data.user.username);
           }
+          setUsernameLoaded(true);
         })
-        .catch(console.error);
+        .catch(err => {
+          console.error(err);
+          setUsernameLoaded(true); // Proceed even on error
+        });
+    } else {
+      setUsernameLoaded(true); // No wallet, assume spectator or no name
     }
     
     // Load chat history
@@ -189,9 +199,9 @@ export default function GamePage() {
 
   useEffect(() => {
     const playerId = localStorage.getItem('playerId');
-    const playerName = localStorage.getItem('playerName');
+    // const playerName = localStorage.getItem('playerName'); // Removed - usage of local storage
     const tier = localStorage.getItem('selectedTier');
-    const walletAddress = localStorage.getItem('playerWallet');
+    // const walletAddress = walletAddress; // Removed - use hook
     const existingGameId = localStorage.getItem('currentGameId');
     const spectateMode = localStorage.getItem('spectateMode');
 
@@ -199,6 +209,14 @@ export default function GamePage() {
 
     // DON'T clear spectate flag yet - need it for socket connection
     const isSpectator = spectateMode === 'true';
+
+    // Wait for username to load if we are a player
+    if (!isSpectator && !usernameLoaded) {
+      return;
+    }
+
+    // Use currentUsername state instead of localStorage
+    const playerName = currentUsername;
 
     if (isSpectator) {
       // Joining as spectator
@@ -235,8 +253,7 @@ export default function GamePage() {
         // Join as spectator
         console.log('🎥 Emitting joinAsSpectator event for tier:', tier);
         socket.emit('joinAsSpectator', { tier });
-        // Now clear the flag
-        localStorage.removeItem('spectateMode');
+        // Note: We keep spectateMode in localStorage until leaving the page
       } else if (existingGameId) {
         // Try to reconnect to existing game
         console.log('Attempting to reconnect to game:', existingGameId);
@@ -247,7 +264,7 @@ export default function GamePage() {
         
         if (!lobbyToken) {
           console.error('❌ No lobby token found - redirecting to homepage');
-          router.push('/');
+          router.push('/?error=Session expired or invalid token. Please try again.');
           return;
         }
         
@@ -257,10 +274,14 @@ export default function GamePage() {
           lobbyToken
         });
         
-        // Clear lobby token after use (one-time)
-        localStorage.removeItem('lobbyToken');
-        localStorage.removeItem('entryPaymentTx'); // Clean up old field
+        // Don't clear lobby token immediately - needed for re-connections/strict mode
+        // localStorage.removeItem('lobbyToken');
       }
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('❌ Connection error:', err);
+      // Don't redirect immediately on connection error, wait for reconnect
     });
 
     socket.on('spectatorJoined', ({ gameId, tier: joinedTier }) => {
@@ -287,9 +308,9 @@ export default function GamePage() {
     });
 
     socket.on('lobbyError', ({ message }) => {
-      alert(`Unable to join: ${message}`);
-      // Redirect back to homepage
-      router.push('/');
+      // alert(`Unable to join: ${message}`);
+      // Redirect back to homepage with error
+      router.push(`/?error=${encodeURIComponent(message)}`);
     });
 
     socket.on('refundProcessed', ({ amount, tx }) => {
@@ -578,7 +599,7 @@ export default function GamePage() {
       
       socket.disconnect();
     };
-  }, [router]);
+  }, [router, usernameLoaded, currentUsername]);
 
   // Auto-dismiss toast after 3 seconds
   useEffect(() => {
@@ -822,6 +843,16 @@ export default function GamePage() {
           for (let j = 0; j < serverSnake.segments.length && j < interpolatedSnake.segments.length; j++) {
             interpolatedSnake.segments[j].x += (serverSnake.segments[j].x - interpolatedSnake.segments[j].x) * entityLerpFactor;
             interpolatedSnake.segments[j].y += (serverSnake.segments[j].y - interpolatedSnake.segments[j].y) * entityLerpFactor;
+          }
+          
+          // SYNC SEGMENTS: Handle growing and shrinking
+          if (interpolatedSnake.segments.length > serverSnake.segments.length) {
+            // Snake shrunk (boost) - remove tail segments immediately
+            interpolatedSnake.segments.length = serverSnake.segments.length;
+          } else if (interpolatedSnake.segments.length < serverSnake.segments.length) {
+            // Snake grew - add new segments
+            const newSegments = serverSnake.segments.slice(interpolatedSnake.segments.length);
+            interpolatedSnake.segments.push(...JSON.parse(JSON.stringify(newSegments)));
           }
           
           // Update other properties directly (no interpolation needed)
@@ -1518,7 +1549,8 @@ export default function GamePage() {
           </div>
         </div>
 
-        {/* Chat Bubble */}
+        {/* Chat Bubble - Only show if NOT playing (spectating or waiting) */}
+        {isSpectating && (
         <motion.button
           onClick={() => setShowChat(true)}
           className="fixed bottom-4 md:bottom-6 right-4 md:right-6 z-40 w-12 h-12 md:w-14 md:h-14 bg-gradient-to-r from-neon-blue to-neon-purple rounded-full shadow-2xl flex items-center justify-center"
@@ -1536,9 +1568,10 @@ export default function GamePage() {
             </div>
           )}
         </motion.button>
+        )}
 
-        {/* Chat Modal */}
-        {showChat && (
+      {/* Chat Modal - Only for Spectators */}
+      {showChat && isSpectating && (
           <div 
             className="fixed inset-0 z-50 flex items-end md:items-end md:justify-end p-2 md:p-4 bg-black/40 backdrop-blur-sm"
             onClick={() => setShowChat(false)}
@@ -1589,7 +1622,7 @@ export default function GamePage() {
                           socketRef.current.emit('chatMessage', {
                             username: currentUsername || 'Anonymous',
                             message: chatInput.trim(),
-                            walletAddress: localStorage.getItem('playerWallet') || null
+                            walletAddress: walletAddress || null
                           });
                         }
                         setChatInput('');
@@ -1604,7 +1637,7 @@ export default function GamePage() {
                         socketRef.current.emit('chatMessage', {
                           username: currentUsername || 'Anonymous',
                           message: chatInput.trim(),
-                          walletAddress: localStorage.getItem('playerWallet') || null
+                          walletAddress: walletAddress || null
                         });
                         setChatInput('');
                       }
@@ -2069,7 +2102,7 @@ export default function GamePage() {
       )}
 
       {/* Chat Bubble - Only for Spectators with wallet */}
-      {isSpectating && currentUsername && typeof window !== 'undefined' && localStorage.getItem('playerWallet') && (
+      {isSpectating && currentUsername && typeof window !== 'undefined' && walletAddress && (
         <motion.button
           onClick={() => setShowChat(true)}
           className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-40 w-12 h-12 md:w-14 md:h-14 bg-gradient-to-r from-neon-blue to-neon-purple rounded-full shadow-2xl flex items-center justify-center"
@@ -2143,7 +2176,7 @@ export default function GamePage() {
                         socketRef.current.emit('chatMessage', {
                           username: currentUsername,
                           message: chatInput.trim(),
-                          walletAddress: localStorage.getItem('playerWallet')
+                          walletAddress: walletAddress
                         });
                       }
                       setChatInput('');
@@ -2158,7 +2191,7 @@ export default function GamePage() {
                         socketRef.current.emit('chatMessage', {
                           username: currentUsername,
                           message: chatInput.trim(),
-                          walletAddress: localStorage.getItem('playerWallet')
+                          walletAddress: walletAddress
                         });
                         setChatInput('');
                       }

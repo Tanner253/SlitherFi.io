@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { SolanaWalletProvider } from "./components/WalletProvider";
+import { GlobalChat } from "./components/GlobalChat";
 // import { DebugConsole } from "./components/DebugConsole"; // Hidden - uncomment for debugging
 
 const inter = Inter({ subsets: ["latin"] });
@@ -21,6 +22,9 @@ export default function RootLayout({
       <body className={inter.className}>
         <SolanaWalletProvider>
           {children}
+          <div className="fixed bottom-4 right-4 z-40">
+            <GlobalChat />
+          </div>
           {/* <DebugConsole /> */}
         </SolanaWalletProvider>
       </body>

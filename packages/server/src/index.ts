@@ -13,6 +13,7 @@ import { getAllTransactions, getRecentTransactions } from './wallet/transactionL
 import { loadBannedIPs, saveBan, getAllBans } from './banManager.js';
 import { connectDB } from './lib/db.js';
 import { Transaction } from './models/Transaction.js';
+import { GameSession } from './models/GameSession.js';
 import { User } from './models/User.js';
 import { BannedIP } from './models/BannedIP.js';
 import { ChatMessage } from './models/ChatMessage.js';
@@ -517,25 +518,25 @@ app.get('/api/user/:wallet/games', async (req: any, res: any) => {
       return res.json({ games: [] });
     }
     
-    const { Transaction } = await import('./models/Transaction.js');
-    
-    // Find games where this wallet won
-    const wonGames = await (Transaction as any)
-      .find({ walletAddress: wallet, status: 'success' })
-      .select('gameId tier timestamp amountUSDC winnerName')
-      .sort({ timestamp: -1 })
+    // Find games where this wallet participated
+    const sessions = await (GameSession as any)
+      .find({ participants: wallet, status: 'completed' })
+      .sort({ startTime: -1 })
       .limit(limit)
       .lean();
     
-    // Transform to game format with isWinner=true
-    const games = wonGames.map((tx: any) => ({
-      gameId: tx.gameId,
-      tier: tx.tier,
-      timestamp: tx.timestamp,
-      isWinner: true,
-      winnerName: tx.winnerName,
-      potAmount: tx.amountUSDC
-    }));
+    // Transform to game format
+    const games = sessions.map((session: any) => {
+      const isWinner = session.winnerWallet === wallet;
+      return {
+        gameId: session.gameId,
+        tier: session.tier,
+        timestamp: session.startTime,
+        isWinner,
+        winnerName: session.winnerName || 'Unknown',
+        potAmount: session.potSize || 0
+      };
+    });
     
     res.json({ games });
   } catch (error) {
@@ -1229,8 +1230,8 @@ io.on('connection', (socket) => {
           { walletAddress },
           {
             $set: { username: playerName, lastActive: new Date() },
-            $inc: { gamesPlayed: 1 },
-            $setOnInsert: { totalWinnings: 0, gamesWon: 0 }
+            // $inc: { gamesPlayed: 1 }, // Moved to lobbyManager (free) and entryFeeService (paid) to prevent double counting
+            $setOnInsert: { totalWinnings: 0, gamesWon: 0, gamesPlayed: 0 }
           },
           { upsert: true, new: true }
         );

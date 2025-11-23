@@ -12,6 +12,9 @@ export interface IGameSession extends Document {
   botPlayers: number;
   winnerId?: string;
   winnerName?: string;
+  winnerWallet?: string;
+  participants: string[]; // List of wallet addresses
+  potSize?: number;
   duration?: number;
   createdAt: Date;
 }
@@ -28,6 +31,9 @@ const GameSessionSchema = new Schema<IGameSession>({
   botPlayers: { type: Number, required: true },
   winnerId: { type: String },
   winnerName: { type: String },
+  winnerWallet: { type: String },
+  participants: { type: [String], default: [], index: true },
+  potSize: { type: Number, default: 0 },
   duration: { type: Number },
   createdAt: { type: Date, default: Date.now }
 });

@@ -181,7 +181,14 @@ export class LobbyManager {
   /**
    * Create game session record for auditing
    */
-  private async createGameSession(gameId: string, tier: string, humanPlayers: number, botPlayers: number): Promise<void> {
+  private async createGameSession(
+    gameId: string, 
+    tier: string, 
+    humanPlayers: number, 
+    botPlayers: number,
+    participants: string[],
+    potSize: number
+  ): Promise<void> {
     try {
       const mongoose = (await import('mongoose')).default;
       if (mongoose.connection.readyState !== 1) {
@@ -199,9 +206,11 @@ export class LobbyManager {
         totalPlayers: humanPlayers + botPlayers,
         humanPlayers,
         botPlayers,
+        participants,
+        potSize
       });
 
-      console.log(`📝 Game session logged: ${gameId} (${humanPlayers}H + ${botPlayers}B)`);
+      console.log(`📝 Game session logged: ${gameId} (${humanPlayers}H + ${botPlayers}B, Pot: $${potSize})`);
     } catch (error) {
       console.error('❌ Error creating game session:', error);
     }
@@ -210,7 +219,12 @@ export class LobbyManager {
   /**
    * Complete game session record
    */
-  private async completeGameSession(gameId: string, winnerId: string, winnerName: string): Promise<void> {
+  private async completeGameSession(
+    gameId: string, 
+    winnerId: string, 
+    winnerName: string,
+    winnerWallet?: string
+  ): Promise<void> {
     try {
       const mongoose = (await import('mongoose')).default;
       if (mongoose.connection.readyState !== 1) {
@@ -229,6 +243,7 @@ export class LobbyManager {
             status: 'completed',
             winnerId,
             winnerName,
+            winnerWallet,
             duration,
           }
         );
@@ -435,6 +450,7 @@ export class LobbyManager {
       joinTime: Date.now(),
       lastInputTime: Date.now(),
       isBot: false,
+      walletAddress, // Store wallet address for history
     });
 
     console.log(`Player ${playerName} joined ${tier} lobby (${lobby.players.size}/${lobby.maxPlayers})`);
@@ -634,11 +650,23 @@ export class LobbyManager {
     const humanPlayers = Array.from(lobby.players.values()).filter(p => !p.isBot);
     const botPlayers = Array.from(lobby.players.values()).filter(p => p.isBot);
     
+    // Collect participant wallet addresses
+    const participants = humanPlayers
+      .map(p => p.walletAddress)
+      .filter((addr): addr is string => !!addr);
+
     // Generate unique session ID for database auditing (lobby ID + timestamp)
     const sessionId = `${lobby.id}_${Date.now()}`;
     
     // Create game session record in database for auditing (use unique sessionId)
-    this.createGameSession(sessionId, lobby.tier, humanPlayers.length, botPlayers.length);
+    this.createGameSession(
+      sessionId, 
+      lobby.tier, 
+      humanPlayers.length, 
+      botPlayers.length,
+      participants,
+      lobby.potSize || 0
+    );
     
     console.log(`✅ STARTING GAME ${lobby.id}`);
     console.log(`   Session ID: ${sessionId}`);
@@ -700,7 +728,9 @@ export class LobbyManager {
       // Note: winnerId/winnerName are set in gameRoom before calling onGameEnd
       const winnerId = game.lastWinnerId || 'unknown';
       const winnerName = game.lastWinnerName || 'Unknown';
-      this.completeGameSession(game.sessionId || game.id, winnerId, winnerName);
+      const winnerWallet = game.lastWinnerWallet;
+      
+      this.completeGameSession(game.sessionId || game.id, winnerId, winnerName, winnerWallet);
       
       // Track Dream game end time for cooldown and persist to DB
       if (lobby.tier === 'dream') {

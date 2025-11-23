@@ -45,6 +45,7 @@ export interface Player {
   lastInputTime: number;
   isBot: boolean;
   boundaryTouchTime?: number; // When player started touching boundary
+  walletAddress?: string; // Linked wallet address
 }
 
 export interface Pellet {

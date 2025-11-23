@@ -1,7 +1,7 @@
 import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { getAssociatedTokenAddress, createTransferInstruction, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
-const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const USDC_MINT = new PublicKey(process.env.NEXT_PUBLIC_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 const PLATFORM_WALLET = new PublicKey('FcAENdG4t6muicnVTUrBkgvysGKqLY3rykCGMc1jzPoP');
 
 export interface PaymentResult {
@@ -52,7 +52,9 @@ async function confirmTransactionPolling(
 export async function payEntryFee(
   wallet: any, // Solana wallet adapter (from useWallet hook)
   amount: number,
-  rpcUrl: string
+  rpcUrl: string,
+  destinationAddress?: string,
+  mintAddress?: string
 ): Promise<PaymentResult> {
   try {
     // Check if wallet is connected
@@ -64,9 +66,37 @@ export async function payEntryFee(
       };
     }
     
+    // Determine destination wallet (use provided or fallback to hardcoded)
+    let destinationPublicKey: PublicKey;
+    if (destinationAddress) {
+      try {
+        destinationPublicKey = new PublicKey(destinationAddress);
+      } catch (e) {
+        console.error('❌ Invalid destination address:', destinationAddress);
+        return { success: false, error: 'Invalid destination address' };
+      }
+    } else {
+      destinationPublicKey = PLATFORM_WALLET;
+    }
+    
+    // Determine mint (use provided or fallback to hardcoded)
+    let mintPublicKey: PublicKey;
+    if (mintAddress) {
+      try {
+        mintPublicKey = new PublicKey(mintAddress);
+      } catch (e) {
+        console.error('❌ Invalid mint address:', mintAddress);
+        return { success: false, error: 'Invalid mint address' };
+      }
+    } else {
+      mintPublicKey = USDC_MINT;
+    }
+    
     console.log('💳 Processing payment...');
     console.log(`   Amount: $${amount} USDC`);
     console.log(`   Wallet Address: ${wallet.publicKey.toBase58().slice(0, 8)}...`);
+    console.log(`   Destination: ${destinationPublicKey.toBase58().slice(0, 8)}...`);
+    console.log(`   Mint: ${mintPublicKey.toBase58().slice(0, 8)}...`);
     console.log(`   Wallet Type: ${wallet.adapter?.name || wallet.wallet?.adapter?.name || 'Unknown'}`);
     console.log(`   User Agent: ${navigator.userAgent.slice(0, 50)}...`);
     console.log('   Methods available:', {
@@ -85,13 +115,13 @@ export async function payEntryFee(
     
     // Get token accounts
     const fromTokenAccount = await getAssociatedTokenAddress(
-      USDC_MINT,
+      mintPublicKey,
       wallet.publicKey
     );
     
     const toTokenAccount = await getAssociatedTokenAddress(
-      USDC_MINT,
-      PLATFORM_WALLET
+      mintPublicKey,
+      destinationPublicKey
     );
     
     console.log(`   From: ${fromTokenAccount.toBase58().slice(0, 8)}...`);
@@ -206,11 +236,26 @@ export async function payEntryFee(
 export async function checkUSDCBalance(
   walletAddress: string,
   requiredAmount: number,
-  rpcUrl: string
+  rpcUrl: string,
+  mintAddress?: string
 ): Promise<{ hasEnough: boolean; balance: number }> {
   try {
+    // Determine mint (use provided or fallback to hardcoded)
+    let mintPublicKey: PublicKey;
+    if (mintAddress) {
+      try {
+        mintPublicKey = new PublicKey(mintAddress);
+      } catch (e) {
+        console.error('❌ Invalid mint address:', mintAddress);
+        return { hasEnough: false, balance: 0 };
+      }
+    } else {
+      mintPublicKey = USDC_MINT;
+    }
+
     console.log(`💰 Fetching USDC balance...`);
     console.log(`   Wallet: ${walletAddress.slice(0, 8)}...`);
+    console.log(`   Mint: ${mintPublicKey.toBase58().slice(0, 8)}...`);
     
     // No WebSocket subscriptions (HTTP only)
     const connection = new Connection(rpcUrl, {
@@ -220,7 +265,7 @@ export async function checkUSDCBalance(
     const publicKey = new PublicKey(walletAddress);
     
     const tokenAccount = await getAssociatedTokenAddress(
-      USDC_MINT,
+      mintPublicKey,
       publicKey
     );
     

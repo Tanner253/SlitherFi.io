@@ -113,7 +113,7 @@ export class Physics {
 
     // Limit head path size to prevent memory issues
     // Keep enough history for all segments to follow
-    const maxPathLength = snake.length * 3;
+    const maxPathLength = snake.length * 3; // Keep enough for current length
     if (snake.headPath.length > maxPathLength) {
       snake.headPath = snake.headPath.slice(0, maxPathLength);
     }
@@ -127,6 +127,15 @@ export class Physics {
    * Each segment follows the position in the head path that is the preferred distance away
    */
   static updateSnakeBody(snake: Snake): void {
+    // Adjust segments array size to match length
+    // If boosting reduced length, pop segments
+    while (snake.segments.length > snake.length && snake.segments.length > 1) {
+      snake.segments.pop();
+    }
+    
+    // If length increased (eating), push new segments (will be positioned below)
+    // Note: addSegments already handles pushing, but this is a safety check
+    
     if (snake.segments.length <= 1) return;
 
     const preferredDistance = this.SEGMENT_DISTANCE;
@@ -272,21 +281,28 @@ export class Physics {
   }
 
   /**
-   * Remove segments from snake tail (for boost cost)
-   * @param snake Snake to remove segments from
-   * @param count Number of segments to remove
-   * @returns Array of removed segment positions
+   * Reduce snake length (for boost cost) without removing segments immediately
+   * The segments array will naturally shrink in updateSnakeBody/moveSnakeHead logic
+   * @param snake Snake to reduce length
+   * @param count Number of length units to remove
+   * @returns Array of removed segment positions (simulated from tail)
    */
   static removeSegments(snake: Snake, count: number): SnakeSegment[] {
     const minLength = this.MIN_BOOST_LENGTH;
     const canRemove = Math.min(count, snake.length - minLength);
     
     if (canRemove > 0) {
-      // Get the segments that will be removed (from the tail)
-      const removedSegments = snake.segments.slice(snake.segments.length - canRemove);
+      // Get tail position for pellet spawning
+      const tail = snake.segments[snake.segments.length - 1];
+      const removedSegments: SnakeSegment[] = [];
       
-      // Remove them from the snake
-      snake.segments = snake.segments.slice(0, snake.segments.length - canRemove);
+      // Simulate removed segments at tail position
+      for (let i = 0; i < canRemove; i++) {
+        removedSegments.push({ ...tail });
+      }
+      
+      // Only reduce the logical length
+      // The visual segments array will be trimmed in the update loop
       snake.length -= canRemove;
       
       return removedSegments;

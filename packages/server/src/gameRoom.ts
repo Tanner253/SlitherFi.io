@@ -22,6 +22,7 @@ export class GameRoom {
   onCheatDetected?: (playerId: string, playerName: string, reason: string) => void;
   lastWinnerId?: string;
   lastWinnerName?: string;
+  lastWinnerWallet?: string;
   private lastWinCheckTime: number = 0;
   
   constructor(id: string, tier: string, io: Server) {
@@ -726,6 +727,7 @@ export class GameRoom {
       if (winner) {
         this.lastWinnerId = winnerId;
         this.lastWinnerName = winner.name;
+        this.lastWinnerWallet = winner.walletAddress;
       }
     }
     

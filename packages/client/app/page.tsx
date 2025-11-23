@@ -44,6 +44,7 @@ export default function HomePage() {
   const [gameModes, setGameModes] = useState<GameMode[]>([]);
   const [lobbies, setLobbies] = useState<LobbyStatus[]>([]);
   const [playerName, setPlayerName] = useState('');
+  const [draftName, setDraftName] = useState('');
   const [selectedMode, setSelectedMode] = useState<'play' | 'spectate' | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [adventureStep, setAdventureStep] = useState<'home' | 'journey' | 'destination'>(connected ? 'journey' : 'home');
@@ -100,6 +101,23 @@ export default function HomePage() {
     }
   }, [connected]);
 
+  // Check if URL has error query param
+  useEffect(() => {
+    // Use URLSearchParams to get query parameters
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const error = urlParams.get('error');
+      
+      if (error) {
+        setToastMessage(`⚠️ ${decodeURIComponent(error)}`);
+        
+        // Clean up URL without reloading
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, []);
+
   // Fetch username from database when wallet connects
   useEffect(() => {
     const fetchUsername = async () => {
@@ -111,12 +129,17 @@ export default function HomePage() {
           
           if (data.user && data.user.username) {
             setPlayerName(data.user.username);
+            setDraftName(data.user.username);
+          } else {
+            setPlayerName('');
+            setDraftName('');
           }
         } catch (error) {
           console.error('Failed to fetch username:', error);
         }
       } else {
         setPlayerName('');
+        setDraftName('');
       }
     };
 
@@ -200,10 +223,10 @@ export default function HomePage() {
   };
 
   // x403 Authentication function
-  const authenticate = async (): Promise<boolean> => {
+  const authenticate = async (): Promise<string | null> => {
     if (!connected || !walletAddress) {
       setToastMessage('🔒 Please connect your wallet');
-      return false;
+      return null;
     }
 
     const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
@@ -218,7 +241,7 @@ export default function HomePage() {
       if (Date.now() < expiryTime) {
         console.log('✅ x403: Using existing session token');
         setSessionToken(storedToken);
-        return true;
+        return storedToken;
       } else {
         console.log('⏰ x403: Session expired, need new signature');
         localStorage.removeItem('x403SessionToken');
@@ -240,7 +263,7 @@ export default function HomePage() {
       if (challengeResponse.status === 429) {
         const rateLimitData = await challengeResponse.json();
         setToastMessage(rateLimitData.error || '⚠️ Too many failed attempts. Please wait.');
-        return false;
+        return null;
       }
 
       // Check for existing session
@@ -252,7 +275,7 @@ export default function HomePage() {
           setSessionToken(data.sessionToken);
           localStorage.setItem('x403SessionToken', data.sessionToken);
           localStorage.setItem('x403SessionExpiry', new Date(data.expiresAt).getTime().toString());
-          return true;
+          return data.sessionToken;
         }
       }
 
@@ -283,7 +306,7 @@ export default function HomePage() {
             if (!signResult.success) {
               setAuthError(signResult.error || 'Signing failed');
               setIsAuthenticating(false);
-              resolve(false);
+              resolve(null);
               return;
             }
 
@@ -305,7 +328,7 @@ export default function HomePage() {
               const rateLimitData = await verifyResponse.json();
               setAuthError(rateLimitData.error || 'Too many failed attempts');
               setIsAuthenticating(false);
-              resolve(false);
+              resolve(null);
               return;
             }
 
@@ -313,7 +336,7 @@ export default function HomePage() {
               const errorData = await verifyResponse.json();
               setAuthError(errorData.error || 'Verification failed');
               setIsAuthenticating(false);
-              resolve(false);
+              resolve(null);
               return;
             }
 
@@ -322,7 +345,7 @@ export default function HomePage() {
             if (!verifyData.authenticated || !verifyData.sessionToken) {
               setAuthError('Authentication failed');
               setIsAuthenticating(false);
-              resolve(false);
+              resolve(null);
               return;
             }
 
@@ -336,21 +359,22 @@ export default function HomePage() {
             setShowAuthModal(false);
             setIsAuthenticating(false);
             setAuthChallenge(null);
-            setToastMessage('✅ Wallet verified successfully!');
+            // Suppress toast to avoid double feedback
+            // setToastMessage('✅ Wallet verified successfully!');
             
-            resolve(true);
+            resolve(verifyData.sessionToken);
           } catch (error: any) {
             console.error('❌ x403 authentication error:', error);
             setAuthError(error.message || 'Authentication failed');
             setIsAuthenticating(false);
-            resolve(false);
+            resolve(null);
           }
         });
       });
     } catch (error: any) {
       console.error('❌ x403 challenge request failed:', error);
       setToastMessage(`⚠️ Authentication error: ${error.message}`);
-      return false;
+      return null;
     }
   };
 
@@ -368,9 +392,9 @@ export default function HomePage() {
 
     // x403 AUTHENTICATION - Required before joining
     console.log('🔐 x403: Checking authentication...');
-    const isAuthenticated = await authenticate();
+    const activeToken = await authenticate();
     
-    if (!isAuthenticated) {
+    if (!activeToken) {
       console.log('❌ x403: Authentication failed or cancelled');
       return;
     }
@@ -390,17 +414,20 @@ export default function HomePage() {
         return;
       }
       
-      // Process payment
-      await handlePaymentAndJoin(tier, gameMode.buyIn);
+      // Process payment using the fresh token
+      await handlePaymentAndJoin(tier, gameMode.buyIn, activeToken);
     } else {
       // Free tier (Dream Mode) - join directly
-      await joinDreamMode(tier);
+      await joinDreamMode(tier, activeToken);
     }
   };
 
   // Handle payment and join for paid tiers
-  const handlePaymentAndJoin = async (tier: string, entryFee: number) => {
+  const handlePaymentAndJoin = async (tier: string, entryFee: number, activeSessionToken: string | null) => {
     setPayingForTier(tier);
+    
+    // Use the passed token or fallback to state (state might be stale in closure)
+    const tokenToUse = activeSessionToken || sessionToken;
     
     try {
       const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC;
@@ -431,7 +458,7 @@ export default function HomePage() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'X-SESSION': sessionToken || ''
+          'X-SESSION': tokenToUse || ''
         },
         body: JSON.stringify({
           tier,
@@ -442,16 +469,22 @@ export default function HomePage() {
       });
 
       if (initialResponse.status !== 402) {
+        if (initialResponse.status === 403) {
+           throw new Error('Authentication expired. Please try again.');
+        }
         throw new Error('Expected 402 Payment Required response');
       }
 
       const paymentRequired: PaymentRequiredResponse = await initialResponse.json();
       console.log('✅ Got 402 Payment Required');
 
+      // Get payment requirements from the response
+      const paymentReq = paymentRequired.accepts[0];
+
       // x402: Make payment
       console.log('💳 x402: Processing USDC payment...');
       const { payEntryFee } = await import('./utils/payment');
-      const paymentResult = await payEntryFee(solanaWallet, entryFee, rpcUrl);
+      const paymentResult = await payEntryFee(solanaWallet, entryFee, rpcUrl, paymentReq.payTo, paymentReq.asset);
       
       if (!paymentResult.success) {
         setToastMessage(`💳 Payment failed: ${paymentResult.error}`);
@@ -468,9 +501,6 @@ export default function HomePage() {
       
       // x402: Send payment proof
       console.log('📨 x402: Sending payment proof...');
-
-      // Get payment requirements from the response
-      const paymentReq = paymentRequired.accepts[0];
       
       const paymentPayload = createPaymentPayload(
         paymentResult.signature!,
@@ -486,7 +516,7 @@ export default function HomePage() {
         headers: {
           'Content-Type': 'application/json',
           'X-PAYMENT': paymentHeader,
-          'X-SESSION': sessionToken || ''
+          'X-SESSION': tokenToUse || ''
         },
         body: JSON.stringify({
           tier,
@@ -509,9 +539,7 @@ export default function HomePage() {
       // Store credentials for game page
       localStorage.setItem('lobbyToken', joinResult.lobbyToken);
       localStorage.setItem('selectedTier', tier);
-      localStorage.setItem('playerName', playerName);
       localStorage.setItem('playerId', playerId);
-      localStorage.setItem('playerWallet', walletAddress!);
       localStorage.setItem('spectateMode', 'false');
       
       setPayingForTier(null);
@@ -525,18 +553,20 @@ export default function HomePage() {
   };
 
   // Join Dream Mode (free)
-  const joinDreamMode = async (tier: string) => {
+  const joinDreamMode = async (tier: string, activeSessionToken: string | null = null) => {
     try {
       const playerId = `player_${Date.now()}`;
       const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
       console.log('🎟️ Requesting free lobby token for Dream Mode...');
 
+      const tokenToUse = activeSessionToken || sessionToken;
+
       const response = await fetch(`${serverUrl}/api/join-lobby`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'X-SESSION': sessionToken || ''
+          'X-SESSION': tokenToUse || ''
         },
         body: JSON.stringify({
           tier,
@@ -558,9 +588,7 @@ export default function HomePage() {
       // Store credentials for game page
       localStorage.setItem('lobbyToken', result.lobbyToken);
       localStorage.setItem('selectedTier', tier);
-      localStorage.setItem('playerName', playerName);
       localStorage.setItem('playerId', playerId);
-      localStorage.setItem('playerWallet', walletAddress!);
       localStorage.setItem('spectateMode', 'false');
       
       router.push('/game');
@@ -588,8 +616,16 @@ export default function HomePage() {
           username: username.trim()
         })
       });
+      // Update the main playerName state to switch views
+      setPlayerName(username.trim());
     } catch (error) {
       console.error('Failed to save username:', error);
+    }
+  };
+
+  const handleNameSubmit = () => {
+    if (draftName.trim()) {
+      saveUsername(draftName);
     }
   };
 
@@ -973,21 +1009,41 @@ export default function HomePage() {
                   animate={{ scale: 1, opacity: 1 }}
                 >
                   <div className="text-8xl mb-6">✍️</div>
-                  <h3 className="text-3xl font-bold text-cyan-300 mb-4">Name Your Warrior</h3>
-                  <p className="text-emerald-400/70 text-lg mb-8">Enter your name to begin your journey</p>
+                  <h3 className="text-3xl font-bold text-cyan-300 mb-4">Name Your Snek</h3>
+                  <p className="text-emerald-400/70 text-lg mb-8">Set your name to begin your journey</p>
+                  
                   <input
                     type="text"
-                    value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value)}
-                    onBlur={() => saveUsername(playerName)}
-                    placeholder="Enter your warrior name..."
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onBlur={handleNameSubmit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                        handleNameSubmit();
+                      }
+                    }}
+                    placeholder="Enter your snek name..."
                     maxLength={15}
                     className="px-6 py-4 bg-green-950 border-2 border-green-700 rounded-xl text-white text-xl font-bold text-center placeholder:text-green-700 focus:outline-none focus:border-cyan-500 transition-all max-w-md mx-auto block"
+                    autoFocus
                   />
-                  <p className="text-sm text-green-400/50 mt-4">Max 15 characters</p>
+                  <p className="text-sm text-green-400/50 mt-4">Press Enter or click away to save</p>
                 </motion.div>
               ) : (
                 <div className="space-y-6">
+                  {/* Static Username Display */}
+                  <div className="text-center mb-8 bg-green-950/30 py-4 rounded-xl border border-green-800/30">
+                    <p className="text-emerald-400/50 text-sm uppercase tracking-wider font-bold mb-1">Playing As</p>
+                    <h3 className="text-3xl font-black text-white">{playerName}</h3>
+                    <button 
+                      onClick={() => setShowProfileModal(true)}
+                      className="text-xs text-green-500 hover:text-green-300 mt-2 underline"
+                    >
+                      Change Name
+                    </button>
+                  </div>
+
                   {gameModes.filter(mode => !mode.locked).length === 0 ? (
                     <div className="col-span-full text-center py-20 bg-gradient-to-br from-yellow-900/20 to-orange-900/20 rounded-3xl border-2 border-yellow-700/30">
                       <div className="text-8xl mb-6">⏳</div>
@@ -1007,10 +1063,26 @@ export default function HomePage() {
                             whileHover={{ scale: 1.02, y: -4 }}
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="relative p-8 bg-gradient-to-br from-purple-900/60 to-pink-900/60 border-2 border-purple-500/50 hover:border-purple-400 rounded-3xl backdrop-blur-sm transition-all cursor-pointer shadow-2xl overflow-hidden group"
-                            onClick={() => handleJoinGame(mode.tier)}
+                            className={`relative p-8 bg-gradient-to-br ${
+                              lobby?.status === 'playing' 
+                                ? 'from-purple-900/60 to-indigo-900/60 border-purple-500/50 hover:border-purple-400' 
+                                : 'from-purple-900/60 to-pink-900/60 border-purple-500/50 hover:border-purple-400'
+                            } border-2 rounded-3xl backdrop-blur-sm transition-all cursor-pointer shadow-2xl overflow-hidden group`}
+                            onClick={() => {
+                              if (lobby?.status === 'playing') {
+                                localStorage.setItem('spectateMode', 'true');
+                                localStorage.setItem('selectedTier', mode.tier);
+                                router.push('/game');
+                              } else {
+                                handleJoinGame(mode.tier);
+                              }
+                            }}
                           >
-                            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/0 to-pink-500/0 group-hover:from-purple-500/10 group-hover:to-pink-500/10 transition-all" />
+                            <div className={`absolute inset-0 bg-gradient-to-br ${
+                              lobby?.status === 'playing' 
+                                ? 'from-purple-500/0 to-indigo-500/0 group-hover:from-purple-500/10 group-hover:to-indigo-500/10' 
+                                : 'from-purple-500/0 to-pink-500/0 group-hover:from-purple-500/10 group-hover:to-pink-500/10'
+                            } transition-all`} />
                             <div className="relative z-10 grid md:grid-cols-2 gap-6 items-center">
                               {/* Left Side - Main Info */}
                               <div>
@@ -1085,10 +1157,24 @@ export default function HomePage() {
                               initial={{ opacity: 0, y: 40 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ delay: index * 0.1 }}
-                              className="relative p-6 bg-gradient-to-br from-green-900/50 to-emerald-900/50 border-2 border-green-700/50 hover:border-green-500 rounded-2xl backdrop-blur-sm transition-all cursor-pointer shadow-xl overflow-hidden group"
-                              onClick={() => handleJoinGame(mode.tier)}
+                              className={`relative p-6 bg-gradient-to-br ${
+                                lobby?.status === 'playing' 
+                                  ? 'from-purple-900/50 to-indigo-900/50 border-purple-700/50 hover:border-purple-500' 
+                                  : 'from-green-900/50 to-emerald-900/50 border-green-700/50 hover:border-green-500'
+                              } border-2 rounded-2xl backdrop-blur-sm transition-all cursor-pointer shadow-xl overflow-hidden group`}
+                              onClick={() => {
+                                if (lobby?.status === 'playing') {
+                                  setSelectedMode('spectate');
+                                } else {
+                                  handleJoinGame(mode.tier);
+                                }
+                              }}
                             >
-                              <div className="absolute inset-0 bg-gradient-to-br from-lime-500/0 to-green-500/0 group-hover:from-lime-500/10 group-hover:to-green-500/10 transition-all" />
+                              <div className={`absolute inset-0 bg-gradient-to-br ${
+                                lobby?.status === 'playing' 
+                                  ? 'from-purple-500/0 to-indigo-500/0 group-hover:from-purple-500/10 group-hover:to-indigo-500/10' 
+                                  : 'from-lime-500/0 to-green-500/0 group-hover:from-lime-500/10 group-hover:to-green-500/10'
+                              } transition-all`} />
                               <div className="relative z-10">
                                 {/* Header */}
                                 <div className="flex items-center justify-between mb-3">
@@ -1145,12 +1231,25 @@ export default function HomePage() {
                                 </div>
                                 
                                 {/* Enter Button */}
-                                <motion.div
-                                  className="py-3 px-4 bg-green-500/30 text-green-300 rounded-xl font-bold text-center"
-                                  whileHover={{ backgroundColor: 'rgba(34, 197, 94, 0.5)' }}
-                                >
-                                  ⚔️ Enter Battle →
-                                </motion.div>
+                                {lobby?.status === 'playing' ? (
+                                  <motion.div
+                                    className="py-3 px-4 bg-purple-500/30 text-purple-300 rounded-xl font-bold text-center cursor-pointer"
+                                    whileHover={{ backgroundColor: 'rgba(168, 85, 247, 0.5)' }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedMode('spectate');
+                                    }}
+                                  >
+                                    🔭 Spectate →
+                                  </motion.div>
+                                ) : (
+                                  <motion.div
+                                    className="py-3 px-4 bg-green-500/30 text-green-300 rounded-xl font-bold text-center"
+                                    whileHover={{ backgroundColor: 'rgba(34, 197, 94, 0.5)' }}
+                                  >
+                                    ⚔️ Enter Battle →
+                                  </motion.div>
+                                )}
                               </div>
                             </motion.div>
                           );
@@ -1293,7 +1392,7 @@ export default function HomePage() {
                     setShowCountdownWarning(false);
                     const gameMode = gameModes.find(m => m.tier === pendingJoinTier);
                     if (gameMode) {
-                      await handlePaymentAndJoin(pendingJoinTier!, gameMode.buyIn);
+                      await handlePaymentAndJoin(pendingJoinTier!, gameMode.buyIn, sessionToken);
                     }
                     setPendingJoinTier(null);
                   }}
