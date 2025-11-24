@@ -77,6 +77,13 @@ export default function HomePage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
 
+  // Stats State
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showTransactionLog, setShowTransactionLog] = useState(false);
+  const [connectedClients, setConnectedClients] = useState(0);
+  const [playersInGame, setPlayersInGame] = useState(0);
+  const [totalSpectators, setTotalSpectators] = useState(0);
+
   // Socket connection for real-time updates and chat
   useEffect(() => {
     const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
@@ -122,6 +129,23 @@ export default function HomePage() {
       });
     });
 
+    // Listen for stats updates
+    socket.on('statsUpdate', (stats: { connectedClients: number; playersInGame: number; totalSpectators: number }) => {
+      setConnectedClients(stats.connectedClients);
+      setPlayersInGame(stats.playersInGame);
+      setTotalSpectators(stats.totalSpectators);
+    });
+
+    // Fetch initial stats
+    fetch(`${serverUrl}/api/stats`)
+      .then(res => res.json())
+      .then((stats: { connectedClients: number; playersInGame: number; totalSpectators: number }) => {
+        setConnectedClients(stats.connectedClients);
+        setPlayersInGame(stats.playersInGame);
+        setTotalSpectators(stats.totalSpectators);
+      })
+      .catch(console.error);
+
     // Store socket globally for chat
     (window as any).gameSocket = socket;
 
@@ -157,6 +181,20 @@ export default function HomePage() {
       }, 100);
     }
   }, [showChat, chatMessages]);
+
+  // ESC key to close modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowChat(false);
+        setShowLeaderboard(false);
+        setShowTransactionLog(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Load session token from localStorage on mount
   useEffect(() => {
@@ -780,62 +818,116 @@ export default function HomePage() {
         animate={{ y: 0 }}
         className="relative z-50 border-b border-green-700/30 bg-black/60 backdrop-blur-lg"
       >
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <motion.div
-              animate={{ 
-                rotate: [0, 10, -10, 0],
-                scale: [1, 1.1, 1.1, 1]
-              }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-              className="text-4xl"
-            >
-              🐍
-            </motion.div>
-            <div>
-              <h1 className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-lime-400 via-green-400 to-emerald-500">
+        <div className="max-w-[1600px] mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="flex items-center gap-2">
+              <motion.div
+                animate={{ 
+                  rotate: [0, 10, -10, 0],
+                  scale: [1, 1.1, 1.1, 1]
+                }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                className="text-2xl md:text-3xl"
+              >
+                🐍
+              </motion.div>
+              <h1 className="text-xl md:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-lime-400 via-green-400 to-emerald-500">
                 SlitherFi
               </h1>
-              <p className="text-xs text-green-400/70 font-medium">Enter the Jungle. Claim the Treasure.</p>
-                  </div>
-              </div>
+            </div>
+            
+            {/* Stats Display - Desktop */}
+            <div className="hidden lg:flex items-center gap-2 md:gap-3 text-xs">
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <div className="w-2 h-2 bg-gray-400 rounded-full" />
+                <span className="font-bold text-white">{connectedClients}</span> online
+              </span>
+              <span className="text-gray-600">•</span>
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <svg className="w-3 h-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                </svg>
+                <span className="font-bold text-green-400">{playersInGame}</span> in game
+              </span>
+              <span className="text-gray-600">•</span>
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <svg className="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span className="font-bold text-purple-400">{totalSpectators}</span> spectating
+              </span>
+              <span className="text-gray-600">•</span>
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <svg className="w-3 h-3 text-lime-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                <span className="font-bold text-lime-400">{connectedClients - playersInGame - totalSpectators}</span> browsing
+              </span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-1.5 md:gap-2">
+            {/* Leaderboard Button */}
+            <motion.button
+              onClick={() => setShowLeaderboard(true)}
+              className="px-2 md:px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-xs font-bold hover:bg-yellow-500/20 transition-all flex items-center gap-1"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+              </svg>
+              <span className="hidden sm:inline">🏆 Top 50</span>
+              <span className="sm:hidden">🏆</span>
+            </motion.button>
+
+            {/* Transaction Log Button */}
+            <motion.button
+              onClick={() => setShowTransactionLog(true)}
+              className="px-2 md:px-3 py-1.5 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-xs font-bold hover:bg-green-500/20 transition-all flex items-center gap-1"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="hidden sm:inline">Payouts</span>
+            </motion.button>
             
             {connected ? (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowProfileModal(true)}
-                className="p-2 hover:bg-green-900/50 rounded-lg transition-all group"
-                title="View Profile"
-              >
-                <span className="text-2xl group-hover:scale-110 transition-transform inline-block">👤</span>
-              </button>
-              <div className="hidden md:flex flex-col items-end bg-green-900/30 px-4 py-2 rounded-lg border border-green-700/30">
-                <span className="text-xs text-emerald-400">Adventurer</span>
-                <span className="text-sm text-white font-mono">
-                  {walletAddress?.slice(0, 4)}...{walletAddress?.slice(-4)}
-                </span>
+              <>
+                <button
+                  onClick={() => setShowProfileModal(true)}
+                  className="p-2 hover:bg-green-900/50 rounded-lg transition-all group"
+                  title="View Profile"
+                >
+                  <span className="text-xl md:text-2xl group-hover:scale-110 transition-transform inline-block">👤</span>
+                </button>
                 {usdcBalance !== null && (
-                  <span className="text-xs text-green-400 font-bold mt-1">
-                    💰 ${usdcBalance.toFixed(2)} USDC
-                  </span>
+                  <div className="hidden md:flex items-center bg-green-900/30 px-3 py-1.5 rounded-lg border border-green-700/30">
+                    <span className="text-xs text-green-400 font-bold">
+                      💰 ${usdcBalance.toFixed(2)} USDC
+                    </span>
+                  </div>
                 )}
-              </div>
+                <button
+                  onClick={disconnect}
+                  className="px-3 md:px-4 py-1.5 md:py-2 bg-red-900/30 border border-red-700/50 rounded-lg text-red-400 hover:bg-red-900/50 transition-all text-xs md:text-sm font-bold"
+                >
+                  Leave
+                </button>
+              </>
+            ) : (
               <button
-                onClick={disconnect}
-                className="px-4 py-2 bg-red-900/30 border border-red-700/50 rounded-lg text-red-400 hover:bg-red-900/50 transition-all"
-              >
-                Leave
-              </button>
-            </div>
-          ) : (
-            <button
                 onClick={connect}
-              className="px-6 py-3 bg-gradient-to-r from-lime-600 to-green-600 rounded-lg font-bold hover:scale-105 transition-transform shadow-lg shadow-green-900/50"
-            >
-              Enter Jungle
-            </button>
+                className="px-4 md:px-6 py-2 md:py-3 bg-gradient-to-r from-lime-600 to-green-600 rounded-lg font-bold hover:scale-105 transition-transform shadow-lg shadow-green-900/50 text-sm md:text-base"
+              >
+                Enter Jungle
+              </button>
             )}
           </div>
+        </div>
       </motion.header>
 
       {/* Main Content */}
@@ -1518,6 +1610,43 @@ export default function HomePage() {
             </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Transaction Log Modal */}
+      <TransactionLog
+        isOpen={showTransactionLog}
+        onClose={() => setShowTransactionLog(false)}
+      />
+
+      {/* Leaderboard Modal */}
+      {showLeaderboard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowLeaderboard(false)}>
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-gradient-to-br from-green-950 via-emerald-900 to-green-950 rounded-2xl border-2 border-green-700/50 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-green-700 to-emerald-700 px-6 py-4 flex items-center justify-between border-b border-green-600/50">
+              <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                <span className="text-3xl">🏆</span>
+                Top 50 Winners
+              </h2>
+              <button
+                onClick={() => setShowLeaderboard(false)}
+                className="text-white/70 hover:text-white transition-colors p-1"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)] bg-gradient-to-b from-green-950/50 to-emerald-950/50">
+              <Leaderboard />
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Chat Bubble */}
       <motion.button
