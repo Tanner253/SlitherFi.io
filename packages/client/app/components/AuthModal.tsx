@@ -63,7 +63,7 @@ export function AuthModal({ isOpen, onSign, onCancel, isLoading, error, challeng
               {/* Benefits */}
               <div className="bg-green-600/10 border border-green-500/30 rounded-xl p-3 md:p-4">
                 <h3 className="text-sm font-bold text-green-400 mb-2">
-                  ⚔️ How x403 Protects SlitherFi:
+                  ⚔️ How x403 Protects SnekFi:
                 </h3>
                 <ul className="text-xs text-emerald-200 space-y-1">
                   <li>✓ Prevents bot farming and multi-accounting</li>
@@ -76,7 +76,7 @@ export function AuthModal({ isOpen, onSign, onCancel, isLoading, error, challeng
               {/* Authorization */}
               <div className="bg-yellow-600/10 border border-yellow-500/30 rounded-xl p-3 md:p-4">
                 <h3 className="text-sm font-bold text-yellow-400 mb-2">
-                  📜 By Signing, You Authorize SlitherFi To:
+                  📜 By Signing, You Authorize SnekFi To:
                 </h3>
                 <ul className="text-xs text-yellow-200 space-y-1">
                   <li>• Create a 30-minute authentication session</li>
@@ -95,7 +95,7 @@ export function AuthModal({ isOpen, onSign, onCancel, isLoading, error, challeng
                   <strong className="text-red-400">Always check the domain before signing!</strong>
                 </p>
                 <div className="bg-black/50 rounded px-3 py-2 font-mono text-xs text-white break-all">
-                  {typeof window !== 'undefined' ? window.location.hostname : 'slitherfi.io'}
+                  {typeof window !== 'undefined' ? window.location.hostname : 'snekfi.io'}
                 </div>
                 <p className="text-xs text-red-300 mt-2">
                   ✗ Never sign if the domain looks suspicious!

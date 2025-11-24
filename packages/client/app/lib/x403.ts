@@ -1,7 +1,7 @@
 /**
  * x403 Client Utilities
  * 
- * Wallet signature-based authentication for SlitherFi
+ * Wallet signature-based authentication for SnekFi
  */
 
 import bs58 from 'bs58';
