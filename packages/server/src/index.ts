@@ -54,6 +54,7 @@ const activePlayersByIP = new Map<string, Set<string>>(); // IP -> Set of player
 
 // Track refunded players to prevent double refunds (player leaves then disconnects)
 const refundedPlayers = new Set<string>(); // playerIds that have already been refunded
+const refundsInProgress = new Map<string, Promise<any>>(); // Track ongoing refund operations
 
 // Anti-cheat: Banned IPs (loaded from file for persistence)
 const bannedIPs = loadBannedIPs();
@@ -1348,6 +1349,23 @@ io.on('connection', (socket) => {
   socket.on('playerLeaveLobby', async ({ playerId }) => {
     console.log(`👋 Player ${playerId} explicitly leaving lobby`);
     
+    // GUARD 1: Check if already refunded
+    if (refundedPlayers.has(playerId)) {
+      console.log(`⚠️ Player ${playerId} already refunded - skipping`);
+      lobbyManager.leaveLobby(playerId);
+      playerToLobby.delete(playerId);
+      return;
+    }
+    
+    // GUARD 2: Check if refund is already in progress (concurrent calls)
+    if (refundsInProgress.has(playerId)) {
+      console.log(`⚠️ Refund already in progress for ${playerId} - waiting for completion`);
+      await refundsInProgress.get(playerId); // Wait for it to complete
+      lobbyManager.leaveLobby(playerId);
+      playerToLobby.delete(playerId);
+      return;
+    }
+    
     // Check if player should get a refund (game not started yet)
     const lobbyId = playerToLobby.get(playerId);
     if (lobbyId && entryFeeService) {
@@ -1366,29 +1384,33 @@ io.on('connection', (socket) => {
           const player = lobby.players.get(playerId);
           const playerName = player?.name || 'Unknown';
           
-          console.log(`💸 Processing refund for ${playerName} (game not started)`);
+          console.log(`💸 Starting refund for ${playerName} (explicit leave, $${entryFee})`);
           
-          // Mark as refunded IMMEDIATELY (before async refund starts) to prevent double refund
+          // Mark as refunded IMMEDIATELY and track the promise
           refundedPlayers.add(playerId);
           
-          const refundResult = await entryFeeService.refundEntryFee(
+          const refundPromise = entryFeeService.refundEntryFee(
             playerId,
             playerName,
             walletAddress,
             entryFee,
             lobbyId,
             tier
-          );
+          ).then((result: any) => {
+            refundsInProgress.delete(playerId); // Clean up immediately after completion
+            return result;
+          });
+          
+          refundsInProgress.set(playerId, refundPromise);
+          const refundResult = await refundPromise;
           
           if (refundResult.success) {
             socket.emit('refundProcessed', { amount: entryFee, tx: refundResult.txSignature });
-            
-            // Remove from lobby pot
+            // Remove from lobby pot ONLY if transaction was successful
             lobbyManager.removeFromPot(tier, entryFee);
           } else {
             console.error(`❌ Refund failed: ${refundResult.error}`);
             socket.emit('refundFailed', { error: refundResult.error });
-            
             // Remove from refunded set if refund failed
             refundedPlayers.delete(playerId);
           }
@@ -1533,8 +1555,21 @@ io.on('connection', (socket) => {
       
       console.log(`👋 PLAYER LEFT: ${playerName} disconnected`);
       
-      // Process refund if applicable (and not already refunded)
-      if (shouldRefund && lobby && entryFeeService && !refundedPlayers.has(playerIdToRemove)) {
+      // GUARD 1: Check if already refunded or in progress
+      if (refundedPlayers.has(playerIdToRemove)) {
+        console.log(`✅ Skipping auto-refund for ${playerName} - already refunded`);
+        shouldRefund = false;
+      }
+      
+      // GUARD 2: Check if refund operation is in progress
+      if (refundsInProgress.has(playerIdToRemove)) {
+        console.log(`⚠️ Refund already in progress for ${playerName} - waiting...`);
+        await refundsInProgress.get(playerIdToRemove); // Wait for it
+        shouldRefund = false;
+      }
+      
+      // Process refund if applicable
+      if (shouldRefund && lobby && entryFeeService) {
         const walletAddress = playerWallets.get(playerIdToRemove);
         const tier = lobby.tier;
         const gameMode = config.gameModes.find(m => m.tier === tier);
@@ -1542,40 +1577,48 @@ io.on('connection', (socket) => {
         if (walletAddress && gameMode?.requiresPayment && tier !== 'dream') {
           const entryFee = gameMode.buyIn;
           
-          console.log(`💸 Auto-refund on disconnect: ${playerName} ($${entryFee})`);
+          console.log(`💸 Starting auto-refund for ${playerName} ($${entryFee}) - Socket: ${socket.id}`);
           
-          // Mark as refunded IMMEDIATELY to prevent race conditions
+          // Mark as refunded IMMEDIATELY and track the promise
           refundedPlayers.add(playerIdToRemove);
           
-          const refundResult = await entryFeeService.refundEntryFee(
+          const refundPromise = entryFeeService.refundEntryFee(
             playerIdToRemove,
             playerName,
             walletAddress,
             entryFee,
             lobbyId!,
             tier
-          );
+          ).then((result: any) => {
+            refundsInProgress.delete(playerIdToRemove); // Clean up immediately
+            return result;
+          });
+          
+          refundsInProgress.set(playerIdToRemove, refundPromise);
+          const refundResult = await refundPromise;
           
           if (refundResult.success) {
-            // Remove from lobby pot
+            console.log(`✅ Auto-refund successful for ${playerName}, updating pot...`);
+            // Remove from lobby pot ONLY if transaction was successful
             lobbyManager.removeFromPot(tier, entryFee);
           } else {
             console.error(`❌ Auto-refund failed for ${playerName}: ${refundResult.error}`);
-            
             // Remove from refunded set if refund failed
             refundedPlayers.delete(playerIdToRemove);
           }
         }
-      } else if (refundedPlayers.has(playerIdToRemove)) {
-        console.log(`✅ Skipping refund for ${playerName} - already refunded`);
       }
       
       lobbyManager.leaveLobby(playerIdToRemove);
       playerToLobby.delete(playerIdToRemove);
       
-      // Clean up refund tracking after disconnect (prevent memory leak)
+      // DON'T delete from refundedPlayers yet - keep it to prevent duplicate refunds
+      // Clean up after 5 minutes to prevent memory leak
       if (refundedPlayers.has(playerIdToRemove)) {
-        refundedPlayers.delete(playerIdToRemove);
+        setTimeout(() => {
+          refundedPlayers.delete(playerIdToRemove);
+          console.log(`🧹 Cleaned up refund tracking for ${playerIdToRemove}`);
+        }, 5 * 60 * 1000); // 5 minutes
       }
       
       // Remove from IP tracking

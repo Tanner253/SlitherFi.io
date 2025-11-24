@@ -3,6 +3,9 @@ import { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, cre
 import bs58 from 'bs58';
 
 // Helper to wait for transaction confirmation using polling (no WebSocket)
+// Track confirmed transactions to prevent duplicate logging
+const confirmedTransactions = new Set<string>();
+
 async function confirmTransactionPolling(
   connection: Connection,
   signature: string,
@@ -16,7 +19,16 @@ async function confirmTransactionPolling(
       
       if (status?.value?.confirmationStatus === 'confirmed' || 
           status?.value?.confirmationStatus === 'finalized') {
-        console.log(`✅ Transaction confirmed: ${signature}`);
+        // Only log once per transaction
+        if (!confirmedTransactions.has(signature)) {
+          console.log(`✅ Transaction confirmed: ${signature}`);
+          confirmedTransactions.add(signature);
+          
+          // Clean up after 5 minutes to prevent memory leak
+          setTimeout(() => {
+            confirmedTransactions.delete(signature);
+          }, 5 * 60 * 1000);
+        }
         return;
       }
       

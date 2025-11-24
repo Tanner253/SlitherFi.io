@@ -136,6 +136,26 @@ export class EntryFeeService {
       console.log(`   Amount: $${entryFee} USDC`);
       console.log(`   Wallet: ${walletAddress}`);
 
+      // IDEMPOTENCY CHECK: Verify payment record exists and is not already refunded
+      if (mongoose.connection.readyState === 1) {
+        const { LobbyPayment } = await import('../models/LobbyPayment.js');
+        const existingPayment = await (LobbyPayment as any).findOne({
+          playerId,
+          lobbyId,
+          status: 'paid'
+        });
+
+        if (!existingPayment) {
+          console.log(`⚠️ No active payment found for ${playerId} in ${lobbyId} - already refunded or never paid`);
+          return {
+            success: false,
+            error: 'No active payment record found (already refunded or never paid)',
+          };
+        }
+
+        console.log(`✅ Payment record found - proceeding with refund`);
+      }
+
       // Check platform has enough balance
       const balance = await this.walletManager.getUSDCBalance();
       if (balance < entryFee) {
