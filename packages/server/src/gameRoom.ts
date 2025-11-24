@@ -675,10 +675,10 @@ export class GameRoom {
         pelletsEaten: p.stats.pelletsEaten,
       }))
       .sort((a, b) => {
-        // Primary: length
-        if (b.length !== a.length) return b.length - a.length;
-        // Tie-breaker 1: timeSurvived
+        // Primary: timeSurvived (last alive wins)
         if (b.timeSurvived !== a.timeSurvived) return b.timeSurvived - a.timeSurvived;
+        // Tie-breaker 1: length
+        if (b.length !== a.length) return b.length - a.length;
         // Tie-breaker 2: cellsEaten
         if (b.cellsEaten !== a.cellsEaten) return b.cellsEaten - a.cellsEaten;
         // Tie-breaker 3: pelletsEaten
