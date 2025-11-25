@@ -63,11 +63,23 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
       const { io } = await import('socket.io-client');
       const socket = io(serverUrl);
       
-      socket.emit('getCosmetics');
+      socket.on('connect', () => {
+        socket.emit('getCosmetics');
+      });
+      
       socket.on('cosmeticsData', (data: any) => {
+        console.log('📦 ProfileModal received cosmetics:', data);
         setAllCosmetics(data);
         socket.disconnect();
       });
+      
+      // Timeout safety
+      setTimeout(() => {
+        if (socket.connected) {
+          console.warn('⚠️ Cosmetics fetch timeout, disconnecting');
+          socket.disconnect();
+        }
+      }, 5000);
     } catch (error) {
       console.error('Failed to fetch all cosmetics:', error);
     }
@@ -532,7 +544,9 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                 )}
 
                 {/* List owned cosmetics for this category */}
-                {allCosmetics[selectedSlot === 'trail' ? 'trails' : selectedSlot === 'headItem' ? 'headItems' : 'nameStyles']
+                {!allCosmetics ? (
+                  <div className="text-center py-4 text-gray-400">Loading cosmetics...</div>
+                ) : allCosmetics[selectedSlot === 'trail' ? 'trails' : selectedSlot === 'headItem' ? 'headItems' : 'nameStyles']
                   ?.filter((c: any) => unlockedCosmetics.includes(c.id))
                   .map((cosmetic: any) => {
                     const isEquipped = equippedCosmetics[selectedSlot] === cosmetic.id;

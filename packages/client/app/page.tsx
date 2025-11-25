@@ -823,7 +823,7 @@ export default function HomePage() {
         <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-lime-600 rounded-full blur-3xl" />
       </div>
       
-      {/* Animated vines */}
+      {/* Animated vines - Simplified to avoid SVG path errors */}
       <div className="absolute inset-0 opacity-20 pointer-events-none">
         <svg className="w-full h-full">
           <defs>
@@ -832,34 +832,28 @@ export default function HomePage() {
               <stop offset="100%" style={{stopColor:'#16a34a', stopOpacity:1}} />
             </linearGradient>
           </defs>
-          <motion.path
-            d="M 100,0 Q 120,100 100,200 Q 80,300 100,400 Q 120,500 100,600"
-            fill="none"
-            stroke="url(#vineGradient)"
-            strokeWidth="3"
-            animate={{
-              d: [
-                "M 100,0 Q 120,100 100,200 Q 80,300 100,400 Q 120,500 100,600",
-                "M 100,0 Q 80,100 100,200 Q 120,300 100,400 Q 80,500 100,600",
-                "M 100,0 Q 120,100 100,200 Q 80,300 100,400 Q 120,500 100,600",
-              ]
-            }}
+          <motion.g
+            animate={{ opacity: [0.5, 1, 0.5] }}
             transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-          />
-          <motion.path
-            d="M 300,0 Q 320,120 300,240 Q 280,360 300,480 Q 320,600 300,720"
-            fill="none"
-            stroke="url(#vineGradient)"
-            strokeWidth="3"
-            animate={{
-              d: [
-                "M 300,0 Q 320,120 300,240 Q 280,360 300,480 Q 320,600 300,720",
-                "M 300,0 Q 280,120 300,240 Q 320,360 300,480 Q 280,600 300,720",
-                "M 300,0 Q 320,120 300,240 Q 280,360 300,480 Q 320,600 300,720",
-              ]
-            }}
+          >
+            <path
+              d="M 100,0 Q 120,100 100,200 Q 80,300 100,400 Q 120,500 100,600"
+              fill="none"
+              stroke="url(#vineGradient)"
+              strokeWidth="3"
+            />
+          </motion.g>
+          <motion.g
+            animate={{ opacity: [0.7, 1, 0.7] }}
             transition={{ duration: 18, repeat: Infinity, ease: "easeInOut", delay: 3 }}
-          />
+          >
+            <path
+              d="M 300,0 Q 320,120 300,240 Q 280,360 300,480 Q 320,600 300,720"
+              fill="none"
+              stroke="url(#vineGradient)"
+              strokeWidth="3"
+            />
+          </motion.g>
         </svg>
       </div>
 
