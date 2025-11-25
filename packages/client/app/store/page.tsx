@@ -1,0 +1,409 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { io, Socket } from 'socket.io-client';
+
+interface CosmeticItem {
+  id: string;
+  name: string;
+  description: string;
+  category: 'trail' | 'headItem' | 'nameStyle';
+  cost: number;
+  rarity?: string;
+}
+
+interface CosmeticsData {
+  trails: CosmeticItem[];
+  headItems: CosmeticItem[];
+  nameStyles: CosmeticItem[];
+}
+
+export default function StorePage() {
+  const router = useRouter();
+  const { publicKey } = useWallet();
+  const walletAddress = publicKey?.toBase58();
+
+  const [appleBalance, setAppleBalance] = useState(0);
+  const [cosmetics, setCosmetics] = useState<CosmeticsData>({ trails: [], headItems: [], nameStyles: [] });
+  const [unlockedCosmetics, setUnlockedCosmetics] = useState<string[]>([]);
+  const [selectedCosmetic, setSelectedCosmetic] = useState<CosmeticItem | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [socket, setSocket] = useState<Socket | null>(null);
+
+  useEffect(() => {
+    if (!walletAddress) {
+      router.push('/');
+      return;
+    }
+
+    // Connect to socket
+    const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+    const newSocket = io(serverUrl);
+    setSocket(newSocket);
+
+    newSocket.on('connect', () => {
+      console.log('✅ Store connected to server');
+      
+      // Fetch cosmetics data
+      newSocket.emit('getCosmetics');
+      
+      // Fetch user cosmetics
+      newSocket.emit('getUserCosmetics', { walletAddress });
+    });
+
+    newSocket.on('cosmeticsData', (data: CosmeticsData) => {
+      console.log('📦 Received cosmetics data:', data);
+      setCosmetics(data);
+      setLoading(false);
+    });
+
+    newSocket.on('userCosmeticsData', (data: any) => {
+      console.log('👤 Received user cosmetics data:', data);
+      if (data.success) {
+        setAppleBalance(data.appleBalance || 0);
+        setUnlockedCosmetics(data.unlockedCosmetics || []);
+      }
+    });
+
+    // Handle purchase result
+    newSocket.on('purchaseResult', (result: any) => {
+      console.log('🍎 Purchase result:', result);
+      setPurchasing(false);
+      if (result.success) {
+        setAppleBalance(result.newBalance);
+        setUnlockedCosmetics(result.unlockedCosmetics);
+        setSelectedCosmetic(null);
+        alert(`✅ ${selectedCosmetic?.name} unlocked! Go to your Profile to equip it.`);
+      } else {
+        const errorMsg = result.error === 'insufficient_balance' ? 'Not enough apples!' :
+                         result.error === 'already_owned' ? 'You already own this!' :
+                         'Purchase failed. Try again.';
+        alert(`❌ ${errorMsg}`);
+      }
+    });
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [walletAddress, router]);
+
+  const handlePurchase = () => {
+    if (!selectedCosmetic || !walletAddress || !socket) return;
+    
+    setPurchasing(true);
+    socket.emit('purchaseCosmetic', {
+      walletAddress,
+      cosmeticId: selectedCosmetic.id,
+    });
+  };
+
+  const getCosmeticIcon = (cosmetic: CosmeticItem) => {
+    // Trail icons
+    if (cosmetic.id === 'trail_basic_glow') return '💠';
+    if (cosmetic.id === 'trail_rainbow') return '🌈';
+    if (cosmetic.id === 'trail_fire') return '🔥';
+    if (cosmetic.id === 'trail_lightning') return '⚡';
+    if (cosmetic.id === 'trail_shadow') return '🌑';
+    
+    // Head item icons
+    if (cosmetic.id === 'head_party_hat') return '🎉';
+    if (cosmetic.id === 'head_sunglasses') return '😎';
+    if (cosmetic.id === 'head_halo') return '😇';
+    if (cosmetic.id === 'head_devil_horns') return '😈';
+    if (cosmetic.id === 'head_crown') return '👑';
+    
+    // Name style icons
+    if (cosmetic.id === 'name_rainbow') return '🌈';
+    if (cosmetic.id === 'name_gold_glow') return '✨';
+    if (cosmetic.id === 'name_neon_pulse') return '💫';
+    if (cosmetic.id === 'name_fire') return '🔥';
+    if (cosmetic.id === 'name_ice') return '❄️';
+    
+    return '⭐';
+  };
+
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-cyber-darker to-cyber-dark p-4 md:p-8">
+      {/* Header */}
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => router.push('/')}
+              className="p-2 hover:bg-green-900/50 rounded-lg transition-all"
+            >
+              <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h1 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neon-green via-neon-blue to-neon-purple">
+              🍎 Cosmetics Store
+            </h1>
+          </div>
+          
+          <div className="bg-red-900/30 px-4 py-2 rounded-lg border border-red-700/30">
+            <span className="text-xl font-black text-red-400">🍎 {appleBalance}</span>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-20 text-green-400">Loading store...</div>
+        ) : (
+          <div className="space-y-12">
+            {/* Trails Section */}
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <span className="text-4xl">✨</span>
+                <h2 className="text-3xl font-black text-blue-300">Trails</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {cosmetics.trails.map((cosmetic) => {
+                  const isUnlocked = unlockedCosmetics.includes(cosmetic.id);
+                  const canAfford = appleBalance >= cosmetic.cost;
+
+                  return (
+                    <div
+                      key={cosmetic.id}
+                      className={`p-4 rounded-xl border-2 ${
+                        isUnlocked
+                          ? 'bg-green-900/30 border-green-500/50'
+                          : 'bg-gray-900/30 border-gray-700/30'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
+                              {isUnlocked && (
+                                <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
+                                  OWNED
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-400">{cosmetic.description}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="text-2xl font-black text-red-400">🍎 {cosmetic.cost}</div>
+
+                          {isUnlocked ? (
+                            <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
+                              ✓
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setSelectedCosmetic(cosmetic)}
+                              disabled={!canAfford}
+                              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                                canAfford
+                                  ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
+                                  : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
+                              }`}
+                            >
+                              {canAfford ? 'Buy' : 'Locked'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Head Items Section */}
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <span className="text-4xl">🎩</span>
+                <h2 className="text-3xl font-black text-purple-300">Head Items</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {cosmetics.headItems.map((cosmetic) => {
+                  const isUnlocked = unlockedCosmetics.includes(cosmetic.id);
+                  const canAfford = appleBalance >= cosmetic.cost;
+
+                  return (
+                    <div
+                      key={cosmetic.id}
+                      className={`p-4 rounded-xl border-2 ${
+                        isUnlocked
+                          ? 'bg-green-900/30 border-green-500/50'
+                          : 'bg-gray-900/30 border-gray-700/30'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
+                              {isUnlocked && (
+                                <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
+                                  OWNED
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-400">{cosmetic.description}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="text-2xl font-black text-red-400">🍎 {cosmetic.cost}</div>
+
+                          {isUnlocked ? (
+                            <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
+                              ✓
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setSelectedCosmetic(cosmetic)}
+                              disabled={!canAfford}
+                              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                                canAfford
+                                  ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
+                                  : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
+                              }`}
+                            >
+                              {canAfford ? 'Buy' : 'Locked'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Name Styles Section */}
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <span className="text-4xl">📝</span>
+                <h2 className="text-3xl font-black text-green-300">Name Styles</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {cosmetics.nameStyles.map((cosmetic) => {
+                  const isUnlocked = unlockedCosmetics.includes(cosmetic.id);
+                  const canAfford = appleBalance >= cosmetic.cost;
+
+                  return (
+                    <div
+                      key={cosmetic.id}
+                      className={`p-4 rounded-xl border-2 ${
+                        isUnlocked
+                          ? 'bg-green-900/30 border-green-500/50'
+                          : 'bg-gray-900/30 border-gray-700/30'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
+                              {isUnlocked && (
+                                <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
+                                  OWNED
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-400">{cosmetic.description}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="text-2xl font-black text-red-400">🍎 {cosmetic.cost}</div>
+
+                          {isUnlocked ? (
+                            <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
+                              ✓
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setSelectedCosmetic(cosmetic)}
+                              disabled={!canAfford}
+                              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                                canAfford
+                                  ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
+                                  : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
+                              }`}
+                            >
+                              {canAfford ? 'Buy' : 'Locked'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Purchase Confirmation Modal */}
+      <AnimatePresence>
+        {selectedCosmetic && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedCosmetic(null)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-gradient-to-br from-red-900/95 to-orange-900/95 border-2 border-yellow-400 rounded-2xl p-6 max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-2xl font-black text-yellow-400 mb-4">Confirm Purchase</h3>
+              
+              <div className="bg-black/30 rounded-xl p-4 mb-4">
+                <div className="text-lg font-bold text-white mb-1">{selectedCosmetic.name}</div>
+                <div className="text-sm text-gray-300">{selectedCosmetic.description}</div>
+              </div>
+
+              <div className="bg-black/30 rounded-xl p-4 mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Cost:</span>
+                  <span className="text-2xl font-black text-red-400">🍎 {selectedCosmetic.cost}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Your Balance:</span>
+                  <span className="text-xl font-bold text-white">🍎 {appleBalance}</span>
+                </div>
+                <div className="border-t border-gray-700 my-2"></div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">After Purchase:</span>
+                  <span className="text-xl font-bold text-green-400">🍎 {appleBalance - selectedCosmetic.cost}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSelectedCosmetic(null)}
+                  className="flex-1 px-4 py-3 bg-gray-700/30 hover:bg-gray-700/50 rounded-lg font-bold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePurchase}
+                  disabled={purchasing}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 rounded-lg font-bold transition-all disabled:opacity-50"
+                >
+                  {purchasing ? 'Purchasing...' : 'Confirm'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+

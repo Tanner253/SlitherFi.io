@@ -60,6 +60,7 @@ export default function HomePage() {
   const [showCountdownWarning, setShowCountdownWarning] = useState(false);
   const [pendingJoinTier, setPendingJoinTier] = useState<string | null>(null);
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+  const [appleBalance, setAppleBalance] = useState<number>(0);
   
   // x403 Auth State
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -322,6 +323,38 @@ export default function HomePage() {
       if (balanceInterval) {
         clearInterval(balanceInterval);
       }
+    };
+  }, [connected, walletAddress]);
+
+  // Fetch apple balance from server
+  useEffect(() => {
+    let isMounted = true;
+    
+    if (connected && walletAddress) {
+      const fetchApples = async () => {
+        try {
+          const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+          const res = await fetch(`${serverUrl}/api/user/${walletAddress}`);
+          const data = await res.json();
+          
+          if (isMounted && data.user) {
+            setAppleBalance(data.user.apples || 0);
+          }
+        } catch (error) {
+          console.error('Failed to fetch apple balance:', error);
+          if (isMounted) {
+            setAppleBalance(0);
+          }
+        }
+      };
+      
+      fetchApples();
+    } else {
+      setAppleBalance(0);
+    }
+    
+    return () => {
+      isMounted = false;
     };
   }, [connected, walletAddress]);
 
@@ -918,13 +951,20 @@ export default function HomePage() {
                 >
                   <span className="text-xl md:text-2xl group-hover:scale-110 transition-transform inline-block">👤</span>
                 </button>
-                {usdcBalance !== null && (
-                  <div className="hidden md:flex items-center bg-green-900/30 px-3 py-1.5 rounded-lg border border-green-700/30">
-                    <span className="text-xs text-green-400 font-bold">
-                      💰 ${usdcBalance.toFixed(2)} USDC
+                <div className="hidden md:flex items-center gap-2">
+                  {usdcBalance !== null && (
+                    <div className="flex items-center bg-green-900/30 px-3 py-1.5 rounded-lg border border-green-700/30">
+                      <span className="text-xs text-green-400 font-bold">
+                        💰 ${usdcBalance.toFixed(2)} USDC
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center bg-red-900/30 px-3 py-1.5 rounded-lg border border-red-700/30">
+                    <span className="text-xs text-red-400 font-bold">
+                      🍎 {appleBalance}
                     </span>
                   </div>
-                )}
+                </div>
                 <button
                   onClick={disconnect}
                   className="px-3 md:px-4 py-1.5 md:py-2 bg-red-900/30 border border-red-700/50 rounded-lg text-red-400 hover:bg-red-900/50 transition-all text-xs md:text-sm font-bold"
@@ -1025,6 +1065,41 @@ export default function HomePage() {
                 <p className="text-emerald-400/70">Winner takes 80%. Instant USDC payouts.</p>
                     </div>
                   </motion.div>
+          </motion.div>
+        )}
+
+        {/* Store Banner */}
+        {adventureStep === 'journey' && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-5xl mx-auto mb-8"
+          >
+            <motion.button
+              onClick={() => router.push('/store')}
+              className="w-full bg-gradient-to-r from-red-900/40 to-orange-900/40 border-2 border-yellow-400/50 rounded-2xl p-6 hover:border-yellow-400 transition-all group overflow-hidden relative"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-orange-600/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="relative z-10 flex items-center justify-between">
+                <div className="flex items-center gap-6">
+                  <div className="text-5xl">🏪</div>
+                  <div className="text-left">
+                    <div className="text-2xl font-black text-yellow-400 mb-1">Cosmetics Store</div>
+                    <div className="text-sm text-yellow-200">Spend your apples on exclusive skins!</div>
+                  </div>
+                </div>
+                
+                <motion.div
+                  animate={{ rotate: [-15, 15, -15] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                  className="text-6xl"
+                >
+                  🍎
+                </motion.div>
+              </div>
+            </motion.button>
           </motion.div>
         )}
 
@@ -1563,6 +1638,8 @@ export default function HomePage() {
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         walletAddress={walletAddress}
+        appleBalance={appleBalance}
+        onAppleBalanceUpdate={setAppleBalance}
       />
 
       {/* Countdown Warning Modal */}

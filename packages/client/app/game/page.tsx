@@ -20,12 +20,24 @@ interface Snake {
   color: string;
   isBoosting: boolean;
   name: string;
+  equippedCosmetics?: {
+    trail?: string;
+    headItem?: string;
+    nameStyle?: string;
+  };
 }
 
 interface Pellet {
   x: number;
   y: number;
   color?: string;
+}
+
+interface Apple {
+  id: string;
+  x: number;
+  y: number;
+  heldBy: string | null;
 }
 
 interface KillAnimation {
@@ -76,6 +88,8 @@ export default function GamePage() {
 
   const [snakes, setSnakes] = useState<Snake[]>([]);
   const [pellets, setPellets] = useState<Pellet[]>([]);
+  const [apple, setApple] = useState<Apple | null>(null);
+  const [appleEarned, setAppleEarned] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [gameEnd, setGameEnd] = useState<GameEndResult | null>(null);
   const [myPlayerId, setMyPlayerId] = useState<string>('');
@@ -478,7 +492,7 @@ export default function GamePage() {
       }]);
     });
 
-    socket.on('gameState', ({ snakes: newSnakes, pellets: newPellets, leaderboard: newLeaderboard, spectatorCount: specCount, mapBounds: newMapBounds, timeRemaining: timeLeft }) => {
+    socket.on('gameState', ({ snakes: newSnakes, pellets: newPellets, leaderboard: newLeaderboard, spectatorCount: specCount, mapBounds: newMapBounds, timeRemaining: timeLeft, apple: appleData }) => {
       // Store server snakes for interpolation
       serverSnakesRef.current = newSnakes;
       
@@ -489,6 +503,7 @@ export default function GamePage() {
       
       setSnakes(newSnakes);
       setPellets(newPellets);
+      setApple(appleData || null);
       setLeaderboard(newLeaderboard);
       if (specCount !== undefined) {
         setSpectatorCount(specCount);
@@ -579,6 +594,42 @@ export default function GamePage() {
           localStorage.clear();
           window.location.href = '/';
         }, 10000);
+      }
+    });
+
+    // Apple events
+    socket.on('appleSpawned', ({ appleId, x, y, spawnTime }) => {
+      console.log(`🍎 Apple spawned at (${x.toFixed(0)}, ${y.toFixed(0)})`);
+      setApple({ id: appleId, x, y, heldBy: null });
+    });
+
+    socket.on('applePickedUp', ({ appleId, playerId: holderId, playerName }) => {
+      console.log(`🍎 ${playerName} picked up the apple!`);
+      setApple(prev => prev ? { ...prev, heldBy: holderId } : null);
+      setToastMessage({ message: `${playerName} picked up the apple!`, type: 'info' });
+    });
+
+    socket.on('appleDropped', ({ appleId, x, y, droppedBy, reason }) => {
+      console.log(`🍎 Apple dropped at (${x.toFixed(0)}, ${y.toFixed(0)})`);
+      setApple(prev => prev ? { ...prev, x, y, heldBy: null } : null);
+    });
+
+    socket.on('appleRespawned', ({ appleId, x, y, reason }) => {
+      console.log(`🍎 Apple respawned at (${x.toFixed(0)}, ${y.toFixed(0)}) - ${reason}`);
+      setApple(prev => prev ? { ...prev, x, y, heldBy: null } : null);
+    });
+
+    socket.on('appleRemoved', ({ appleId, reason }) => {
+      console.log(`🍎 Apple removed - ${reason}`);
+      setApple(null);
+    });
+
+    socket.on('appleRewarded', ({ playerId: rewardedPlayerId, newBalance, reason }) => {
+      console.log(`🍎 Apple rewarded! New balance: ${newBalance} (${reason})`);
+      if (rewardedPlayerId === playerId) {
+        setAppleEarned(true);
+        const reasonText = reason === 'held_at_end' ? 'You held the apple!' : 'You eliminated the apple holder!';
+        setToastMessage({ message: `🍎 +1 Apple Earned! (${reasonText}) | Total: ${newBalance}`, type: 'success' });
       }
     });
 
@@ -980,6 +1031,25 @@ export default function GamePage() {
         // Check for kill animation (sun rays + glow)
         const killAnim = activeKillAnimations.find(a => a.blobId === snake.id);
         
+        // Draw trail cosmetic (if equipped)
+        const cosmetics = snake.equippedCosmetics || {};
+        if (cosmetics.trail === 'trail_basic_glow') {
+          // Simple glow trail
+          for (let i = 1; i < Math.min(snake.segments.length, 10); i++) {
+            const seg = snake.segments[i];
+            const alpha = 1 - (i / 10);
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.3;
+            ctx.fillStyle = '#4ECDC4';
+            ctx.shadowColor = '#4ECDC4';
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(seg.x, seg.y, segmentRadius + 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
         // Draw body segments (connected circles)
         for (let i = snake.segments.length - 1; i >= 0; i--) {
           const seg = snake.segments[i];
@@ -1041,6 +1111,29 @@ export default function GamePage() {
         ctx.arc(rightEyeX, rightEyeY, eyeRadius * 0.5, 0, Math.PI * 2);
         ctx.fill();
         
+        // Draw head item cosmetic (if equipped)
+        if (cosmetics.headItem === 'head_party_hat') {
+          // Simple triangle hat above head
+          ctx.fillStyle = '#FF10F0';
+          ctx.beginPath();
+          ctx.moveTo(head.x, head.y - headRadius - 18);
+          ctx.lineTo(head.x - 6, head.y - headRadius);
+          ctx.lineTo(head.x + 6, head.y - headRadius);
+          ctx.closePath();
+          ctx.fill();
+        } else if (cosmetics.headItem === 'head_halo') {
+          // Glowing ring above head
+          ctx.save();
+          ctx.strokeStyle = '#FFD700';
+          ctx.lineWidth = 2 / camera.zoom;
+          ctx.shadowColor = '#FFD700';
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.arc(head.x, head.y - headRadius - 12, 12, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+        
         // Kill animation - sun rays
         if (killAnim) {
           const elapsed = now - killAnim.startTime;
@@ -1083,15 +1176,139 @@ export default function GamePage() {
           ctx.restore();
         }
 
-        // Draw player name
+        // Draw player name with cosmetic styling
         const player = leaderboard.find(p => p.id === snake.playerId);
         if (player) {
-          ctx.fillStyle = '#fff';
+          const cosmetics = snake.equippedCosmetics || {};
+          
+          // Apply name style cosmetics
+          if (cosmetics.nameStyle === 'name_rainbow') {
+            // Rainbow gradient text
+            const gradient = ctx.createLinearGradient(head.x - 50, 0, head.x + 50, 0);
+            gradient.addColorStop(0, '#FF0000');
+            gradient.addColorStop(0.2, '#FFFF00');
+            gradient.addColorStop(0.4, '#00FF00');
+            gradient.addColorStop(0.6, '#00FFFF');
+            gradient.addColorStop(0.8, '#0000FF');
+            gradient.addColorStop(1, '#FF00FF');
+            ctx.fillStyle = gradient;
+          } else if (cosmetics.nameStyle === 'name_gold_glow') {
+            // Gold with glow
+            ctx.fillStyle = '#FFD700';
+            ctx.shadowColor = '#FFD700';
+            ctx.shadowBlur = 10;
+          } else if (cosmetics.nameStyle === 'name_neon_pulse') {
+            // Pulsing neon
+            const pulse = 0.7 + 0.3 * Math.sin(now / 500);
+            ctx.fillStyle = '#00F0FF';
+            ctx.shadowColor = '#00F0FF';
+            ctx.shadowBlur = 15 * pulse;
+          } else {
+            // Default white
+            ctx.fillStyle = '#fff';
+          }
+          
           ctx.font = `${Math.max(12, 14 / camera.zoom)}px Arial`;
           ctx.textAlign = 'center';
           ctx.fillText(player.name, head.x, head.y + headRadius + 20 / camera.zoom);
+          ctx.shadowBlur = 0; // Reset shadow
         }
       });
+
+      // Draw crown on first place player
+      if (leaderboard.length > 0 && leaderboard[0]) {
+        const firstPlace = sortedSnakes.find(s => s.playerId === leaderboard[0].id);
+        if (firstPlace && firstPlace.segments.length > 0) {
+          const head = firstPlace.segments[0];
+          const headRadius = 15;
+          const crownY = head.y - headRadius - 15;
+          
+          // Draw simple crown (rotated 180 degrees - points up now)
+          ctx.fillStyle = '#FFD700';
+          ctx.beginPath();
+          // Crown base (at bottom)
+          ctx.moveTo(head.x - 10, crownY + 8);
+          ctx.lineTo(head.x - 10, crownY);
+          ctx.lineTo(head.x - 6, crownY + 4);
+          ctx.lineTo(head.x, crownY);
+          ctx.lineTo(head.x + 6, crownY + 4);
+          ctx.lineTo(head.x + 10, crownY);
+          ctx.lineTo(head.x + 10, crownY + 8);
+          ctx.closePath();
+          ctx.fill();
+          
+          // Crown outline
+          ctx.strokeStyle = '#FFA500';
+          ctx.lineWidth = 1 / camera.zoom;
+          ctx.stroke();
+        }
+      }
+
+      // Draw apple (free or held)
+      if (apple) {
+        const APPLE_RADIUS_FREE = 12;
+        const APPLE_RADIUS_HELD = 8;
+        const APPLE_OFFSET = 14;
+        
+        let appleX = apple.x;
+        let appleY = apple.y;
+        let appleRadius = APPLE_RADIUS_FREE;
+        let isHeld = false;
+        
+        // If apple is held, position it in front of holder's head
+        if (apple.heldBy) {
+          const holder = sortedSnakes.find(s => s.playerId === apple.heldBy);
+          if (holder && holder.segments.length > 0) {
+            const head = holder.segments[0];
+            const angle = holder.angle || 0;
+            appleX = head.x + Math.cos(angle) * APPLE_OFFSET;
+            appleY = head.y + Math.sin(angle) * APPLE_OFFSET;
+            appleRadius = APPLE_RADIUS_HELD;
+            isHeld = true;
+          }
+        }
+        
+        // Draw apple body (red circle with gradient)
+        const gradient = ctx.createRadialGradient(appleX - 3, appleY - 3, 2, appleX, appleY, appleRadius);
+        gradient.addColorStop(0, '#FF6B6B');
+        gradient.addColorStop(1, '#CC0000');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(appleX, appleY, appleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add glow for free apples
+        if (!isHeld) {
+          const pulseIntensity = 0.5 + 0.5 * Math.sin(now / 500);
+          ctx.save();
+          ctx.shadowColor = '#FFD700';
+          ctx.shadowBlur = 20 * pulseIntensity;
+          ctx.globalAlpha = 0.8;
+          ctx.strokeStyle = '#FFD700';
+          ctx.lineWidth = 2 / camera.zoom;
+          ctx.beginPath();
+          ctx.arc(appleX, appleY, appleRadius + 2, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+          
+          // Floating animation (bob up and down)
+          appleY += Math.sin(now / 1000) * 3;
+        }
+        
+        // Draw small stem
+        ctx.strokeStyle = '#8B4513';
+        ctx.lineWidth = 2 / camera.zoom;
+        ctx.beginPath();
+        ctx.moveTo(appleX, appleY - appleRadius);
+        ctx.lineTo(appleX + 2, appleY - appleRadius - 4);
+        ctx.stroke();
+        
+        // Draw small leaf
+        ctx.fillStyle = '#228B22';
+        ctx.beginPath();
+        ctx.ellipse(appleX + 3, appleY - appleRadius - 3, 3, 2, Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       ctx.restore();
 
@@ -1103,7 +1320,7 @@ export default function GamePage() {
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [snakes, pellets, killAnimations, leaderboard, myPlayerId, isSpectating, spectatingPlayerId]);
+  }, [snakes, pellets, apple, killAnimations, leaderboard, myPlayerId, isSpectating, spectatingPlayerId]);
 
   // Cleanup old animations periodically (separate from render loop)
   useEffect(() => {
@@ -1323,6 +1540,23 @@ export default function GamePage() {
             </div>
             <div className="text-gray-400">Final Placement</div>
           </div>
+
+          {/* Apple Earned Banner */}
+          {appleEarned && (
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-gradient-to-r from-red-900/80 to-orange-900/80 border-2 border-yellow-400 rounded-xl p-4 mb-6"
+            >
+              <div className="flex items-center justify-center gap-3">
+                <span className="text-4xl">🍎</span>
+                <div>
+                  <div className="text-2xl font-black text-yellow-400">+1 Apple Earned!</div>
+                  <div className="text-sm text-yellow-200">Collected from the arena</div>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
           {/* Stats */}
           <div className="grid grid-cols-2 gap-4 mb-8">

@@ -1,5 +1,5 @@
 import { Server, Socket } from 'socket.io';
-import { Player, Snake, SnakeSegment, Pellet, GameState, PlayerStats, GameEndResult, LeaderboardEntry, Vector2 } from './types.js';
+import { Player, Snake, SnakeSegment, Pellet, GameState, PlayerStats, GameEndResult, LeaderboardEntry, Vector2, Apple } from './types.js';
 import { Physics } from './physics.js';
 import { SpatialHash } from './spatialHash.js';
 import { config } from './config.js';
@@ -24,6 +24,8 @@ export class GameRoom {
   lastWinnerName?: string;
   lastWinnerWallet?: string;
   private lastWinCheckTime: number = 0;
+  private lastAppleHolderId?: string; // Track last player who held apple (for winner-kills-holder case)
+  onAppleReward?: (playerId: string, walletAddress: string, reason: 'held_at_end' | 'killed_holder') => Promise<void>;
   
   constructor(id: string, tier: string, io: Server) {
     this.id = id;
@@ -48,6 +50,7 @@ export class GameRoom {
       spectators: new Set(),
       startTime: this.gameStartTime,
       lastTickTime: Date.now(),
+      apple: null, // Initialize without apple
     };
 
     this.initializePellets();
@@ -76,9 +79,253 @@ export class GameRoom {
   }
 
   /**
+   * Initialize apple based on spawn rate rules
+   */
+  private initializeApple(): void {
+    let shouldSpawn = false;
+
+    // Determine spawn rate based on tier
+    if (this.tier === 'dream') {
+      // 10% spawn rate for Dream mode
+      const roll = Math.random() * 100;
+      shouldSpawn = roll < 10;
+      console.log(`🍎 Apple spawn roll for Dream mode: ${roll.toFixed(2)} ${shouldSpawn ? '✓ WILL SPAWN' : '✗ NO SPAWN'}`);
+    } else {
+      // 100% spawn rate for paid entry games
+      shouldSpawn = true;
+      console.log(`🍎 Apple will spawn in paid tier: ${this.tier}`);
+    }
+
+    if (shouldSpawn) {
+      console.log(`🍎 Calling spawnApple() now...`);
+      this.spawnApple();
+      console.log(`🍎 After spawnApple(), apple state:`, this.gameState.apple ? 'EXISTS' : 'NULL');
+    } else {
+      this.gameState.apple = null;
+      console.log(`🍎 No apple this game`);
+    }
+  }
+
+  /**
+   * Spawn apple at a valid position
+   */
+  private spawnApple(): void {
+    const PLAYER_BUFFER = 200;
+    const MAX_ATTEMPTS = 10;
+    
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const x = this.currentMapBounds.minX + Math.random() * (this.currentMapBounds.maxX - this.currentMapBounds.minX);
+      const y = this.currentMapBounds.minY + Math.random() * (this.currentMapBounds.maxY - this.currentMapBounds.minY);
+      
+      // Check if position is too close to any player spawn (only if players exist)
+      let tooClose = false;
+      if (this.players.size > 0) {
+        for (const player of this.players.values()) {
+          if (player.snake.segments.length > 0) {
+            const head = player.snake.segments[0];
+            const dist = Math.hypot(x - head.x, y - head.y);
+            if (dist < PLAYER_BUFFER) {
+              tooClose = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (!tooClose) {
+        const apple: Apple = {
+          id: `apple_${Date.now()}`,
+          x,
+          y,
+          heldBy: null,
+          spawnTime: Date.now(),
+        };
+        
+        this.gameState.apple = apple;
+        
+        // Broadcast apple spawn to all clients
+        this.io.to(this.id).emit('appleSpawned', {
+          appleId: apple.id,
+          x: apple.x,
+          y: apple.y,
+          spawnTime: apple.spawnTime,
+        });
+        
+        console.log(`🍎 Apple spawned at (${Math.floor(x)}, ${Math.floor(y)})`);
+        return;
+      }
+    }
+    
+    // Failed to find valid position after max attempts - still spawn it anyway
+    console.log(`⚠️ Failed to find ideal spawn position after ${MAX_ATTEMPTS} attempts, spawning anyway`);
+    
+    // Spawn at center of map as fallback
+    const centerX = (this.currentMapBounds.minX + this.currentMapBounds.maxX) / 2;
+    const centerY = (this.currentMapBounds.minY + this.currentMapBounds.maxY) / 2;
+    
+    const apple: Apple = {
+      id: `apple_${Date.now()}`,
+      x: centerX,
+      y: centerY,
+      heldBy: null,
+      spawnTime: Date.now(),
+    };
+    
+    this.gameState.apple = apple;
+    
+    // Broadcast apple spawn to all clients
+    this.io.to(this.id).emit('appleSpawned', {
+      appleId: apple.id,
+      x: apple.x,
+      y: apple.y,
+      spawnTime: apple.spawnTime,
+    });
+    
+    console.log(`🍎 Apple spawned at center (${Math.floor(centerX)}, ${Math.floor(centerY)})`);
+  }
+
+  /**
+   * Check apple pickup collisions
+   */
+  private checkAppleCollisions(): void {
+    const apple = this.gameState.apple;
+    if (!apple || apple.heldBy) return; // Skip if no apple or already held
+    
+    const APPLE_RADIUS = 12;
+    
+    for (const player of this.players.values()) {
+      if (player.snake.segments.length === 0) continue;
+      
+      const head = player.snake.segments[0];
+      const dist = Math.hypot(head.x - apple.x, head.y - apple.y);
+      
+      if (dist < Physics.HEAD_RADIUS + APPLE_RADIUS) {
+        // Player picked up apple
+        apple.heldBy = player.id;
+        this.lastAppleHolderId = player.id;
+        
+        console.log(`🍎 ${player.name} picked up the apple!`);
+        
+        // Broadcast pickup to all clients
+        this.io.to(this.id).emit('applePickedUp', {
+          appleId: apple.id,
+          playerId: player.id,
+          playerName: player.name,
+        });
+        
+        return; // Only one player can pick it up
+      }
+    }
+  }
+
+  /**
+   * Drop apple at position (when player dies or disconnects)
+   */
+  private dropApple(x: number, y: number, droppedBy: string, reason: 'death' | 'disconnect'): void {
+    const apple = this.gameState.apple;
+    if (!apple || apple.heldBy !== droppedBy) return;
+    
+    apple.x = x;
+    apple.y = y;
+    apple.heldBy = null;
+    
+    console.log(`🍎 Apple dropped at (${Math.floor(x)}, ${Math.floor(y)}) - reason: ${reason}`);
+    
+    // Check if apple is outside safe zone
+    if (x < this.currentMapBounds.minX || x > this.currentMapBounds.maxX ||
+        y < this.currentMapBounds.minY || y > this.currentMapBounds.maxY) {
+      console.log(`⚠️ Dropped apple outside safe zone, respawning...`);
+      this.respawnApple();
+      return;
+    }
+    
+    // Broadcast drop to all clients
+    this.io.to(this.id).emit('appleDropped', {
+      appleId: apple.id,
+      x: apple.x,
+      y: apple.y,
+      droppedBy,
+      reason,
+    });
+  }
+
+  /**
+   * Respawn apple in safe zone (called when apple hits boundary)
+   */
+  private respawnApple(): void {
+    if (!this.gameState.apple) return;
+    
+    const BOUNDARY_BUFFER = 50;
+    const PLAYER_BUFFER = 100;
+    const MAX_ATTEMPTS = 10;
+    
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const x = this.currentMapBounds.minX + BOUNDARY_BUFFER + 
+                Math.random() * (this.currentMapBounds.maxX - this.currentMapBounds.minX - BOUNDARY_BUFFER * 2);
+      const y = this.currentMapBounds.minY + BOUNDARY_BUFFER + 
+                Math.random() * (this.currentMapBounds.maxY - this.currentMapBounds.minY - BOUNDARY_BUFFER * 2);
+      
+      // Check if too close to any player
+      let tooClose = false;
+      for (const player of this.players.values()) {
+        if (player.snake.segments.length > 0) {
+          const head = player.snake.segments[0];
+          const dist = Math.hypot(x - head.x, y - head.y);
+          if (dist < PLAYER_BUFFER) {
+            tooClose = true;
+            break;
+          }
+        }
+      }
+      
+      if (!tooClose) {
+        const apple = this.gameState.apple;
+        apple.x = x;
+        apple.y = y;
+        apple.heldBy = null;
+        
+        console.log(`🍎 Apple respawned at (${Math.floor(x)}, ${Math.floor(y)})`);
+        
+        this.io.to(this.id).emit('appleRespawned', {
+          appleId: apple.id,
+          x: apple.x,
+          y: apple.y,
+          reason: 'zone_shrink',
+        });
+        
+        return;
+      }
+    }
+    
+    // No valid position found - remove apple
+    console.log(`⚠️ No valid position for apple respawn - removing apple from game`);
+    this.gameState.apple = null;
+    this.io.to(this.id).emit('appleRemoved', {
+      appleId: this.gameState.apple?.id || 'unknown',
+      reason: 'no_valid_position',
+    });
+  }
+
+  /**
+   * Check if apple is outside safe zone
+   */
+  private checkAppleZoneSafety(): void {
+    const apple = this.gameState.apple;
+    if (!apple || apple.heldBy) return; // Skip if no apple or being held
+    
+    const isOutside = apple.x < this.currentMapBounds.minX || apple.x > this.currentMapBounds.maxX ||
+                      apple.y < this.currentMapBounds.minY || apple.y > this.currentMapBounds.maxY;
+    
+    if (isOutside) {
+      console.log(`🍎 Apple hit by shrinking zone, respawning...`);
+      this.respawnApple();
+    }
+  }
+
+  /**
    * Add player to game
    */
-  addPlayer(socketId: string, playerId: string, name: string, isBot: boolean = false): void {
+  addPlayer(socketId: string, playerId: string, name: string, isBot: boolean = false, walletAddress?: string, equippedCosmetics?: any): void {
     const startX = Math.random() * config.game.mapWidth;
     const startY = Math.random() * config.game.mapHeight;
     const startAngle = Math.random() * Math.PI * 2;
@@ -133,6 +380,8 @@ export class GameRoom {
       joinTime: Date.now(),
       lastInputTime: Date.now(),
       isBot,
+      walletAddress, // Store wallet address
+      equippedCosmetics, // Store equipped cosmetics
     };
 
     this.players.set(playerId, player);
@@ -156,6 +405,9 @@ export class GameRoom {
   start(): void {
     console.log(`Game ${this.id} (Tier: $${this.tier}) starting with ${this.players.size} players`);
     
+    // Initialize apple based on tier and spawn rate
+    this.initializeApple();
+    
     const tickRate = config.server.tickRate;
     const tickInterval = 1000 / tickRate;
 
@@ -176,6 +428,7 @@ export class GameRoom {
     if (config.game.shrinkingEnabled) {
       this.updateSafeZone();
       this.cleanPelletsOutsideBounds();
+      this.checkAppleZoneSafety(); // Check if apple needs respawning
     }
 
     // Update all players
@@ -185,6 +438,7 @@ export class GameRoom {
 
     // Handle collisions
     this.handleCollisions();
+    this.checkAppleCollisions(); // Check apple pickups
 
     // Damage players outside safe zone
     if (config.game.shrinkingEnabled) {
@@ -469,6 +723,15 @@ export class GameRoom {
     const victim = this.players.get(victimId);
     if (!victim || victim.snake.segments.length === 0) return;
 
+    // Check if victim is holding apple and drop it
+    const apple = this.gameState.apple;
+    if (apple && apple.heldBy === victimId) {
+      const head = victim.snake.segments[0];
+      if (head) {
+        this.dropApple(head.x, head.y, victimId, 'death');
+      }
+    }
+
     // Award kill to killer
     if (killerId) {
       const killer = this.players.get(killerId);
@@ -649,6 +912,73 @@ export class GameRoom {
   }
 
   /**
+   * Handle apple reward distribution at game end
+   */
+  private handleAppleRewards(winnerId: string | null): void {
+    const apple = this.gameState.apple;
+    if (!apple) {
+      console.log(`🍎 No apple spawned this game - no rewards`);
+      return; // No apple this game
+    }
+    
+    let rewardPlayerId: string | null = null;
+    let rewardReason: 'held_at_end' | 'killed_holder' = 'held_at_end';
+    
+    // Primary condition: Someone is holding the apple at game end
+    if (apple.heldBy) {
+      const holder = this.players.get(apple.heldBy);
+      if (holder) {
+        rewardPlayerId = apple.heldBy;
+        rewardReason = 'held_at_end';
+        console.log(`🍎 ${holder.name} held apple at game end - receives +1 apple`);
+      }
+    }
+    // Secondary condition: Winner killed the apple holder
+    else if (winnerId && this.lastAppleHolderId && winnerId !== this.lastAppleHolderId) {
+      const winner = this.players.get(winnerId);
+      const lastHolder = this.players.get(this.lastAppleHolderId);
+      
+      // Check if last holder is dead (winner killed them)
+      if (lastHolder && lastHolder.snake.segments.length === 0) {
+        rewardPlayerId = winnerId;
+        rewardReason = 'killed_holder';
+        console.log(`🍎 ${winner?.name} killed apple holder - receives +1 apple`);
+      }
+    }
+    
+    // Award apple to the determined player
+    if (rewardPlayerId) {
+      const rewardPlayer = this.players.get(rewardPlayerId);
+      if (rewardPlayer && rewardPlayer.walletAddress) {
+        console.log(`🍎 Awarding apple to ${rewardPlayer.name} (${rewardPlayer.walletAddress})`);
+        
+        // Trigger apple reward callback if provided
+        if (this.onAppleReward) {
+          this.onAppleReward(rewardPlayerId, rewardPlayer.walletAddress, rewardReason)
+            .then(() => {
+              // Notify player of reward
+              const socket = Array.from(this.io.sockets.sockets.values()).find(s => s.id === rewardPlayer.socketId);
+              if (socket) {
+                socket.emit('appleRewarded', {
+                  playerId: rewardPlayerId,
+                  newBalance: -1, // Will be updated by server after DB write
+                  reason: rewardReason,
+                });
+              }
+            })
+            .catch(error => {
+              console.error(`❌ Failed to award apple to ${rewardPlayer.name}:`, error);
+            });
+        }
+      } else {
+        console.log(`⚠️ Apple reward player has no wallet address - no reward given`);
+      }
+    } else {
+      console.log(`🍎 No apple reward this game (apple was free at game end)`);
+    }
+  }
+
+  /**
    * End game and calculate results
    */
   private endGame(winnerId: string | null): void {
@@ -696,6 +1026,9 @@ export class GameRoom {
       finalRankings: rankings,
       playerStats,
     };
+
+    // Handle apple rewards before broadcasting game end
+    this.handleAppleRewards(winnerId);
 
     // Broadcast game end
     this.io.to(this.id).emit('gameEnd', result);
@@ -817,6 +1150,7 @@ export class GameRoom {
           color: player.snake.color,
           isBoosting: player.snake.isBoosting,
           name: player.name,
+          equippedCosmetics: player.equippedCosmetics || {},
         });
       }
     }
@@ -831,6 +1165,17 @@ export class GameRoom {
 
     const timeRemaining = Math.max(0, this.maxDuration - (Date.now() - this.gameStartTime));
 
+    // Prepare apple data for clients
+    let appleData = null;
+    if (this.gameState.apple) {
+      appleData = {
+        id: this.gameState.apple.id,
+        x: this.gameState.apple.x,
+        y: this.gameState.apple.y,
+        heldBy: this.gameState.apple.heldBy,
+      };
+    }
+
     this.io.to(this.id).emit('gameState', {
       snakes,
       pellets: pelletsArray,
@@ -838,6 +1183,7 @@ export class GameRoom {
       spectatorCount: this.gameState.spectators.size,
       mapBounds: config.game.shrinkingEnabled ? this.currentMapBounds : null,
       timeRemaining, // Milliseconds remaining
+      apple: appleData, // Include apple state
     });
   }
 

@@ -1,5 +1,11 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export interface EquippedCosmetics {
+  trail?: string;
+  headItem?: string;
+  nameStyle?: string;
+}
+
 export interface IUser extends Document {
   walletAddress: string;
   username: string;
@@ -9,6 +15,9 @@ export interface IUser extends Document {
   gamesPlayed: number;
   lastActive: Date;
   createdAt: Date;
+  apples: number;
+  unlockedCosmetics: string[];
+  equippedCosmetics: EquippedCosmetics;
 }
 
 const UserSchema = new Schema<IUser>({
@@ -19,13 +28,24 @@ const UserSchema = new Schema<IUser>({
   gamesWon: { type: Number, default: 0 },
   gamesPlayed: { type: Number, default: 0 },
   lastActive: { type: Date, default: Date.now },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  apples: { type: Number, default: 0, min: 0 },
+  unlockedCosmetics: { type: [String], default: [] },
+  equippedCosmetics: {
+    type: {
+      trail: { type: String, required: false },
+      headItem: { type: String, required: false },
+      nameStyle: { type: String, required: false }
+    },
+    default: {}
+  }
 });
 
 // Indexes for leaderboard queries
 UserSchema.index({ totalWinnings: -1 });
 UserSchema.index({ gamesWon: -1 });
 UserSchema.index({ totalWagered: -1 });
+UserSchema.index({ apples: -1 }); // For apple leaderboard in future
 
 export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
 

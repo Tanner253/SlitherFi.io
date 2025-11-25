@@ -34,6 +34,12 @@ export interface Snake {
   statMultiplier?: number; // Tier-based stat boost (mass & speed)
 }
 
+export interface EquippedCosmetics {
+  trail?: string;
+  headItem?: string;
+  nameStyle?: string;
+}
+
 export interface Player {
   id: string;
   socketId: string;
@@ -46,6 +52,7 @@ export interface Player {
   isBot: boolean;
   boundaryTouchTime?: number; // When player started touching boundary
   walletAddress?: string; // Linked wallet address
+  equippedCosmetics?: EquippedCosmetics; // Player's equipped cosmetics
 }
 
 export interface Pellet {
@@ -88,12 +95,21 @@ export interface Lobby {
   potSize: number; // Total USDC collected for this lobby
 }
 
+export interface Apple {
+  id: string;
+  x: number;
+  y: number;
+  heldBy: string | null; // Player ID holding the apple, null if free
+  spawnTime: number;
+}
+
 export interface GameState {
   players: Map<string, Player>;
   pellets: Map<string, Pellet>;
   spectators: Set<string>; // Socket IDs of spectators
   startTime: number;
   lastTickTime: number;
+  apple: Apple | null; // Single apple in game, null if no apple spawned
 }
 
 export interface LeaderboardEntry {
@@ -114,5 +130,21 @@ export interface GameEndResult {
     cellsEaten: number;
   }>;
   playerStats: Record<string, PlayerStats>;
+}
+
+export interface CosmeticItem {
+  id: string;
+  name: string;
+  description: string;
+  category: 'trail' | 'headItem' | 'nameStyle';
+  cost: number;
+  rarity?: 'common' | 'rare' | 'epic' | 'legendary';
+  renderData: any; // Category-specific rendering parameters
+}
+
+export interface CosmeticsConfig {
+  trails: CosmeticItem[];
+  headItems: CosmeticItem[];
+  nameStyles: CosmeticItem[];
 }
 

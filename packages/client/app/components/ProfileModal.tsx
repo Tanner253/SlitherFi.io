@@ -10,6 +10,13 @@ interface UserProfile {
   totalWagered?: number;
   gamesWon: number;
   gamesPlayed: number;
+  apples?: number;
+  unlockedCosmetics?: string[];
+  equippedCosmetics?: {
+    trail?: string;
+    headItem?: string;
+    nameStyle?: string;
+  };
 }
 
 interface RecentGame {
@@ -25,20 +32,118 @@ interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   walletAddress: string | null;
+  appleBalance?: number;
+  onAppleBalanceUpdate?: (balance: number) => void;
 }
 
-export function ProfileModal({ isOpen, onClose, walletAddress }: ProfileModalProps) {
+export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0, onAppleBalanceUpdate }: ProfileModalProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [recentGames, setRecentGames] = useState<RecentGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
+  const [equippedCosmetics, setEquippedCosmetics] = useState<{ trail?: string; headItem?: string; nameStyle?: string }>({});
+  const [unlockedCosmetics, setUnlockedCosmetics] = useState<string[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<'trail' | 'headItem' | 'nameStyle' | null>(null);
+  const [allCosmetics, setAllCosmetics] = useState<any>(null);
 
   useEffect(() => {
     if (isOpen && walletAddress) {
       fetchProfileData();
+      fetchAllCosmetics();
     }
   }, [isOpen, walletAddress]);
+
+  const fetchAllCosmetics = async () => {
+    try {
+      const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+      
+      // Use a temporary socket just to fetch cosmetics
+      const { io } = await import('socket.io-client');
+      const socket = io(serverUrl);
+      
+      socket.emit('getCosmetics');
+      socket.on('cosmeticsData', (data: any) => {
+        setAllCosmetics(data);
+        socket.disconnect();
+      });
+    } catch (error) {
+      console.error('Failed to fetch all cosmetics:', error);
+    }
+  };
+
+  const handleEquip = async (cosmeticId: string, slot: 'trail' | 'headItem' | 'nameStyle') => {
+    if (!walletAddress) return;
+
+    try {
+      const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+      const { io } = await import('socket.io-client');
+      const socket = io(serverUrl);
+
+      socket.emit('equipCosmetic', { walletAddress, cosmeticId, slot });
+      socket.on('equipResult', (result: any) => {
+        if (result.success) {
+          setEquippedCosmetics(result.equippedCosmetics);
+          setSelectedSlot(null);
+        }
+        socket.disconnect();
+      });
+    } catch (error) {
+      console.error('Failed to equip cosmetic:', error);
+    }
+  };
+
+  const handleUnequip = async (slot: 'trail' | 'headItem' | 'nameStyle') => {
+    if (!walletAddress) return;
+
+    try {
+      const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+      const { io } = await import('socket.io-client');
+      const socket = io(serverUrl);
+
+      socket.emit('unequipCosmetic', { walletAddress, slot });
+      socket.on('unequipResult', (result: any) => {
+        if (result.success) {
+          setEquippedCosmetics(result.equippedCosmetics);
+        }
+        socket.disconnect();
+      });
+    } catch (error) {
+      console.error('Failed to unequip cosmetic:', error);
+    }
+  };
+
+  const getCosmeticIcon = (cosmeticId: string) => {
+    if (cosmeticId === 'trail_basic_glow') return '💠';
+    if (cosmeticId === 'trail_rainbow') return '🌈';
+    if (cosmeticId === 'trail_fire') return '🔥';
+    if (cosmeticId === 'trail_lightning') return '⚡';
+    if (cosmeticId === 'trail_shadow') return '🌑';
+    if (cosmeticId === 'head_party_hat') return '🎉';
+    if (cosmeticId === 'head_sunglasses') return '😎';
+    if (cosmeticId === 'head_halo') return '😇';
+    if (cosmeticId === 'head_devil_horns') return '😈';
+    if (cosmeticId === 'head_crown') return '👑';
+    if (cosmeticId === 'name_rainbow') return '🌈';
+    if (cosmeticId === 'name_gold_glow') return '✨';
+    if (cosmeticId === 'name_neon_pulse') return '💫';
+    if (cosmeticId === 'name_fire') return '🔥';
+    if (cosmeticId === 'name_ice') return '❄️';
+    return '⭐';
+  };
+
+  const getCosmeticName = (cosmeticId: string) => {
+    if (!allCosmetics) return cosmeticId;
+    
+    const allItems = [
+      ...allCosmetics.trails || [],
+      ...allCosmetics.headItems || [],
+      ...allCosmetics.nameStyles || []
+    ];
+    
+    const item = allItems.find((c: any) => c.id === cosmeticId);
+    return item?.name || cosmeticId;
+  };
 
   const fetchProfileData = async () => {
     if (!walletAddress) return;
@@ -54,6 +159,13 @@ export function ProfileModal({ isOpen, onClose, walletAddress }: ProfileModalPro
       if (profileData.user) {
         setProfile(profileData.user);
         setNewName(profileData.user.username);
+        setEquippedCosmetics(profileData.user.equippedCosmetics || {});
+        setUnlockedCosmetics(profileData.user.unlockedCosmetics || []);
+        
+        // Update parent apple balance if callback provided
+        if (onAppleBalanceUpdate && profileData.user.apples !== undefined) {
+          onAppleBalanceUpdate(profileData.user.apples);
+        }
       }
       
       // Fetch recent games
@@ -192,6 +304,88 @@ export function ProfileModal({ isOpen, onClose, walletAddress }: ProfileModalPro
                     <div className="text-sm text-emerald-400/70 mb-1">Total Wagered</div>
                     <div className="text-2xl font-black text-orange-400">${(profile.totalWagered || 0).toFixed(2)}</div>
                   </div>
+                  <div className="bg-black/30 rounded-xl p-4 col-span-2">
+                    <div className="text-sm text-emerald-400/70 mb-1">Apples Collected</div>
+                    <div className="text-3xl font-black text-red-400 flex items-center justify-center gap-2">
+                      🍎 {appleBalance}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Equipped Cosmetics */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-bold text-green-300">Equipped Cosmetics</h3>
+                    <span className="text-xs text-gray-400">{unlockedCosmetics.length} items owned</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Trail Slot */}
+                    <button
+                      onClick={() => setSelectedSlot('trail')}
+                      className="bg-blue-900/20 border-2 border-blue-700/30 hover:border-blue-500/60 rounded-xl p-4 text-center transition-all group"
+                    >
+                      <div className="text-xs text-blue-400 mb-2">Trail</div>
+                      {equippedCosmetics.trail ? (
+                        <>
+                          <div className="text-3xl mb-1">{getCosmeticIcon(equippedCosmetics.trail)}</div>
+                          <div className="text-xs text-white font-bold truncate">{getCosmeticName(equippedCosmetics.trail)}</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-2xl mb-2">✨</div>
+                          <div className="text-3xl font-bold text-white group-hover:scale-110 transition-transform">+</div>
+                        </>
+                      )}
+                    </button>
+                    
+                    {/* Head Item Slot */}
+                    <button
+                      onClick={() => setSelectedSlot('headItem')}
+                      className="bg-purple-900/20 border-2 border-purple-700/30 hover:border-purple-500/60 rounded-xl p-4 text-center transition-all group"
+                    >
+                      <div className="text-xs text-purple-400 mb-2">Head</div>
+                      {equippedCosmetics.headItem ? (
+                        <>
+                          <div className="text-3xl mb-1">{getCosmeticIcon(equippedCosmetics.headItem)}</div>
+                          <div className="text-xs text-white font-bold truncate">{getCosmeticName(equippedCosmetics.headItem)}</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-2xl mb-2">🎩</div>
+                          <div className="text-3xl font-bold text-white group-hover:scale-110 transition-transform">+</div>
+                        </>
+                      )}
+                    </button>
+                    
+                    {/* Name Style Slot */}
+                    <button
+                      onClick={() => setSelectedSlot('nameStyle')}
+                      className="bg-green-900/20 border-2 border-green-700/30 hover:border-green-500/60 rounded-xl p-4 text-center transition-all group"
+                    >
+                      <div className="text-xs text-green-400 mb-2">Name</div>
+                      {equippedCosmetics.nameStyle ? (
+                        <>
+                          <div className="text-3xl mb-1">{getCosmeticIcon(equippedCosmetics.nameStyle)}</div>
+                          <div className="text-xs text-white font-bold truncate">{getCosmeticName(equippedCosmetics.nameStyle)}</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-2xl mb-2">📝</div>
+                          <div className="text-3xl font-bold text-white group-hover:scale-110 transition-transform">+</div>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="text-center mt-3">
+                    <a
+                      href="/store"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 rounded-lg font-bold text-sm transition-all"
+                    >
+                      <span>🏪</span>
+                      <span>Visit Store</span>
+                      <span>🍎</span>
+                    </a>
+                  </div>
                 </div>
 
                 {/* Wallet */}
@@ -250,6 +444,102 @@ export function ProfileModal({ isOpen, onClose, walletAddress }: ProfileModalPro
           </div>
         </motion.div>
       </div>
+
+      {/* Equip Modal */}
+      <AnimatePresence>
+        {selectedSlot && allCosmetics && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedSlot(null)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-gradient-to-br from-cyber-dark to-cyber-darker border-2 border-neon-green/50 rounded-2xl p-6 max-w-md w-full max-h-[70vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-black text-neon-green">
+                  {selectedSlot === 'trail' ? '✨ Trails' : selectedSlot === 'headItem' ? '🎩 Head Items' : '📝 Name Styles'}
+                </h3>
+                <button
+                  onClick={() => setSelectedSlot(null)}
+                  className="p-2 hover:bg-green-900/50 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {/* Unequip Option (if something is equipped) */}
+                {equippedCosmetics[selectedSlot] && (
+                  <button
+                    onClick={() => {
+                      handleUnequip(selectedSlot);
+                      setSelectedSlot(null);
+                    }}
+                    className="w-full p-3 bg-red-900/30 border border-red-700/50 rounded-lg hover:bg-red-900/50 transition-all text-left"
+                  >
+                    <div className="text-sm font-bold text-red-400">❌ Unequip Current</div>
+                  </button>
+                )}
+
+                {/* List owned cosmetics for this category */}
+                {allCosmetics[selectedSlot === 'trail' ? 'trails' : selectedSlot === 'headItem' ? 'headItems' : 'nameStyles']
+                  ?.filter((c: any) => unlockedCosmetics.includes(c.id))
+                  .map((cosmetic: any) => {
+                    const isEquipped = equippedCosmetics[selectedSlot] === cosmetic.id;
+
+                    return (
+                      <button
+                        key={cosmetic.id}
+                        onClick={() => {
+                          handleEquip(cosmetic.id, selectedSlot);
+                          setSelectedSlot(null);
+                        }}
+                        disabled={isEquipped}
+                        className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
+                          isEquipped
+                            ? 'bg-green-900/30 border-green-500/50 cursor-not-allowed'
+                            : 'bg-gray-900/30 border-gray-700/30 hover:border-neon-green/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="text-3xl">{getCosmeticIcon(cosmetic.id)}</div>
+                            <div>
+                              <div className="text-sm font-bold text-white">{cosmetic.name}</div>
+                              <div className="text-xs text-gray-400">{cosmetic.description}</div>
+                            </div>
+                          </div>
+                          {isEquipped && (
+                            <span className="text-green-400 font-bold text-xl">✓</span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                {/* Show message if no items owned */}
+                {allCosmetics && 
+                 allCosmetics[selectedSlot === 'trail' ? 'trails' : selectedSlot === 'headItem' ? 'headItems' : 'nameStyles']
+                   ?.filter((c: any) => unlockedCosmetics.includes(c.id)).length === 0 && (
+                  <div className="text-center py-8 text-gray-400">
+                    <div className="text-4xl mb-2">🔒</div>
+                    <div className="text-sm">No items owned yet</div>
+                    <a
+                      href="/store"
+                      className="inline-block mt-3 px-3 py-1.5 bg-red-600/30 hover:bg-red-600/50 rounded-lg text-xs font-bold transition-all"
+                    >
+                      Visit Store
+                    </a>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </AnimatePresence>
   );
 }

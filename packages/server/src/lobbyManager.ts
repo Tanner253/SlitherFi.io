@@ -130,6 +130,21 @@ export class LobbyManager {
   }
 
   /**
+   * Set apple reward callback
+   */
+  setAppleRewardCallback(callback: (playerId: string, walletAddress: string, reason: 'held_at_end' | 'killed_holder') => Promise<void>): void {
+    // Set callback on all existing games
+    for (const game of this.games.values()) {
+      game.onAppleReward = callback;
+    }
+    
+    // Store callback for future games
+    this.onAppleReward = callback;
+  }
+
+  private onAppleReward?: (playerId: string, walletAddress: string, reason: 'held_at_end' | 'killed_holder') => Promise<void>;
+
+  /**
    * Set cheat detection callback
    */
   setCheatDetectionCallback(callback: (playerId: string, playerName: string, reason: string) => void): void {
@@ -375,7 +390,7 @@ export class LobbyManager {
   /**
    * Join player to lobby
    */
-  joinLobby(socketId: string, playerId: string, playerName: string, tier: string, walletAddress?: string): { success: boolean; message?: string } {
+  async joinLobby(socketId: string, playerId: string, playerName: string, tier: string, walletAddress?: string): Promise<{ success: boolean; message?: string }> {
     const lobbyId = `lobby_${tier}`;
     const lobby = this.lobbies.get(lobbyId);
 
@@ -432,6 +447,20 @@ export class LobbyManager {
       socket.join(lobbyId);
     }
 
+    // Fetch player's equipped cosmetics if they have a wallet
+    let equippedCosmetics = {};
+    if (walletAddress) {
+      try {
+        const { cosmeticsService } = await import('./cosmeticsService.js');
+        const cosmeticsData = await cosmeticsService.getUserCosmetics(walletAddress);
+        if (cosmeticsData.success) {
+          equippedCosmetics = cosmeticsData.equippedCosmetics || {};
+        }
+      } catch (error) {
+        console.error('Failed to fetch player cosmetics:', error);
+      }
+    }
+
     // Add player to lobby
     lobby.players.set(playerId, {
       id: playerId,
@@ -451,6 +480,7 @@ export class LobbyManager {
       lastInputTime: Date.now(),
       isBot: false,
       walletAddress, // Store wallet address for history
+      equippedCosmetics, // Store equipped cosmetics
     });
 
     console.log(`Player ${playerName} joined ${tier} lobby (${lobby.players.size}/${lobby.maxPlayers})`);
@@ -678,6 +708,11 @@ export class LobbyManager {
     const game = new GameRoom(lobby.id, lobby.tier, this.io);
     game.sessionId = sessionId; // Store unique session ID for database
     
+    // Set apple reward callback if available
+    if (this.onAppleReward) {
+      game.onAppleReward = this.onAppleReward;
+    }
+    
     // Override game duration for Dream tier
     if (lobby.tier === 'dream') {
       game.maxDuration = config.dream.gameDuration;
@@ -686,7 +721,7 @@ export class LobbyManager {
 
     // Add all players to game
     for (const player of lobby.players.values()) {
-      game.addPlayer(player.socketId, player.id, player.name, player.isBot);
+      game.addPlayer(player.socketId, player.id, player.name, player.isBot, player.walletAddress, player.equippedCosmetics);
       
       // If bot, start AI behavior
       if (player.isBot) {

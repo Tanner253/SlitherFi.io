@@ -18,6 +18,7 @@ import { User } from './models/User.js';
 import { BannedIP } from './models/BannedIP.js';
 import { ChatMessage } from './models/ChatMessage.js';
 import { DreamTimer } from './models/DreamTimer.js';
+import { cosmeticsService } from './cosmeticsService.js';
 import { createPaymentRequired, extractPaymentHeader, decodePaymentPayload, validatePaymentPayload } from './lib/x402.js';
 import type { LobbyAccessToken } from './types/x402.js';
 import { createAuthRequired, verifySignature, decodeAuthHeader, isRateLimited, recordAuthFailure, clearRateLimit, createSessionToken, verifySessionToken } from './lib/x403.js';
@@ -93,6 +94,9 @@ connectDB()
 
       // Initialize LobbyManager (loads Dream timer from DB)
       await lobbyManager.initialize();
+      
+      // Load cosmetics config
+      await cosmeticsService.loadCosmetics();
     } else {
       console.warn('⚠️ Database connection not ready - skipping Dream timer load');
     }
@@ -338,6 +342,35 @@ if (process.env.PLATFORM_WALLET_PRIVATE_KEY && process.env.SOLANA_RPC_URL) {
       }
     });
     
+    // Set apple reward callback on lobby manager
+    lobbyManager.setAppleRewardCallback(async (playerId, walletAddress, reason) => {
+      console.log(`🍎 Apple reward callback triggered for ${walletAddress} (${reason})`);
+      
+      try {
+        await cosmeticsService.awardApple(walletAddress, reason);
+        
+        // Get updated balance
+        const userData = await cosmeticsService.getUserCosmetics(walletAddress);
+        if (userData.success) {
+          // Find player's socket and notify them
+          const playerSocket = Array.from(io.sockets.sockets.values()).find(s => {
+            const pid = Array.from(playerWallets.entries()).find(([id, wallet]) => wallet === walletAddress)?.[0];
+            return pid && Array.from(playerWallets.keys()).some(k => k === playerId);
+          });
+          
+          if (playerSocket) {
+            playerSocket.emit('appleRewarded', {
+              playerId,
+              newBalance: userData.appleBalance || 0,
+              reason,
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Failed to award apple:`, error);
+      }
+    });
+    
   } catch (error) {
     console.error('❌ Failed to initialize payment service:', error);
     console.error('   Games will run without payouts');
@@ -494,7 +527,7 @@ app.get('/api/platform-status', async (req: any, res: any) => {
 app.get('/api/user/:wallet', async (req: any, res: any) => {
   try {
     const user = await (User as any).findOne({ walletAddress: req.params.wallet })
-      .select('walletAddress username totalWinnings totalWagered gamesWon gamesPlayed')
+      .select('walletAddress username totalWinnings totalWagered gamesWon gamesPlayed apples unlockedCosmetics equippedCosmetics')
       .lean();
     
     if (!user) {
@@ -1259,7 +1292,7 @@ io.on('connection', (socket) => {
         return;
     }
     
-    const result = lobbyManager.joinLobby(socket.id, playerId, playerName, tier, walletAddress);
+    const result = await lobbyManager.joinLobby(socket.id, playerId, playerName, tier, walletAddress);
     
     if (result.success) {
       const lobbyId = `lobby_${tier}`;
@@ -1499,6 +1532,87 @@ io.on('connection', (socket) => {
       username: trimmedUsername,
       message: trimmedMessage
     });
+  });
+
+  // ==================== COSMETICS EVENTS ====================
+  
+  // Get all cosmetics
+  socket.on('getCosmetics', () => {
+    const cosmetics = cosmeticsService.getCosmetics();
+    socket.emit('cosmeticsData', cosmetics);
+  });
+
+  // Get user's cosmetics data
+  socket.on('getUserCosmetics', async ({ walletAddress }) => {
+    if (!walletAddress) {
+      socket.emit('userCosmeticsData', { success: false, error: 'wallet_required' });
+      return;
+    }
+    
+    const result = await cosmeticsService.getUserCosmetics(walletAddress);
+    socket.emit('userCosmeticsData', result);
+  });
+
+  // Purchase cosmetic
+  socket.on('purchaseCosmetic', async ({ walletAddress, cosmeticId }) => {
+    if (!walletAddress || !cosmeticId) {
+      socket.emit('purchaseResult', { success: false, error: 'invalid_request' });
+      return;
+    }
+    
+    const result = await cosmeticsService.purchaseCosmetic(walletAddress, cosmeticId);
+    socket.emit('purchaseResult', result);
+  });
+
+  // Equip cosmetic
+  socket.on('equipCosmetic', async ({ walletAddress, cosmeticId, slot }) => {
+    if (!walletAddress || !cosmeticId || !slot) {
+      socket.emit('equipResult', { success: false, error: 'invalid_request' });
+      return;
+    }
+    
+    const result = await cosmeticsService.equipCosmetic(walletAddress, cosmeticId, slot);
+    socket.emit('equipResult', result);
+    
+    // Broadcast cosmetic update to lobby/game if successful
+    if (result.success) {
+      // Find player's current lobby/game and broadcast update
+      const playerId = Array.from(playerWallets.entries()).find(([_, wallet]) => wallet === walletAddress)?.[0];
+      if (playerId) {
+        const lobbyId = playerToLobby.get(playerId);
+        if (lobbyId) {
+          io.to(lobbyId).emit('cosmeticsUpdated', {
+            playerId,
+            equippedCosmetics: result.equippedCosmetics,
+          });
+        }
+      }
+    }
+  });
+
+  // Unequip cosmetic
+  socket.on('unequipCosmetic', async ({ walletAddress, slot }) => {
+    if (!walletAddress || !slot) {
+      socket.emit('unequipResult', { success: false, error: 'invalid_request' });
+      return;
+    }
+    
+    const result = await cosmeticsService.unequipCosmetic(walletAddress, slot);
+    socket.emit('unequipResult', result);
+    
+    // Broadcast cosmetic update to lobby/game if successful
+    if (result.success) {
+      const playerId = Array.from(playerWallets.entries()).find(([_, wallet]) => wallet === walletAddress)?.[0];
+      if (playerId) {
+        const lobbyId = playerToLobby.get(playerId);
+        if (lobbyId) {
+          io.to(lobbyId).emit('cosmeticsUpdated', {
+            playerId,
+            equippedCosmetics: result.equippedCosmetics,
+          });
+        }
+      }
+    }
   });
 
   // Player disconnects
