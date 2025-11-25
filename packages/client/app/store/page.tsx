@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { io, Socket } from 'socket.io-client';
+import { SnakePreview } from '../components/SnakePreview';
+import SnowEffect from '../components/SnowEffect';
 
 interface CosmeticItem {
   id: string;
@@ -33,6 +35,8 @@ export default function StorePage() {
   const [purchasing, setPurchasing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [purchasingCosmeticName, setPurchasingCosmeticName] = useState<string>('');
 
   useEffect(() => {
     if (!walletAddress) {
@@ -71,18 +75,20 @@ export default function StorePage() {
 
     // Handle purchase result
     newSocket.on('purchaseResult', (result: any) => {
-      console.log('🍎 Purchase result:', result);
+      console.log('🎁 Purchase result:', result);
       setPurchasing(false);
       if (result.success) {
         setAppleBalance(result.newBalance);
         setUnlockedCosmetics(result.unlockedCosmetics);
+        const purchasedName = purchasingCosmeticName || 'Cosmetic';
         setSelectedCosmetic(null);
-        alert(`✅ ${selectedCosmetic?.name} unlocked! Go to your Profile to equip it.`);
+        setPurchasingCosmeticName('');
+        setToastMessage({ message: `✅ ${purchasedName} unlocked! Go to your Profile to equip it.`, type: 'success' });
       } else {
-        const errorMsg = result.error === 'insufficient_balance' ? 'Not enough apples!' :
+        const errorMsg = result.error === 'insufficient_balance' ? 'Not enough presents!' :
                          result.error === 'already_owned' ? 'You already own this!' :
                          'Purchase failed. Try again.';
-        alert(`❌ ${errorMsg}`);
+        setToastMessage({ message: `❌ ${errorMsg}`, type: 'error' });
       }
     });
 
@@ -91,10 +97,22 @@ export default function StorePage() {
     };
   }, [walletAddress, router]);
 
+  // Auto-dismiss toast after 4 seconds
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
   const handlePurchase = () => {
     if (!selectedCosmetic || !walletAddress || !socket) return;
     
     setPurchasing(true);
+    // Store cosmetic name before modal closes
+    setPurchasingCosmeticName(selectedCosmetic.name);
     socket.emit('purchaseCosmetic', {
       walletAddress,
       cosmeticId: selectedCosmetic.id,
@@ -129,6 +147,8 @@ export default function StorePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-cyber-darker to-cyber-dark p-4 md:p-8">
+      {/* Christmas snow effect */}
+      <SnowEffect />
       {/* Header */}
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
@@ -142,12 +162,12 @@ export default function StorePage() {
               </svg>
             </button>
             <h1 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neon-green via-neon-blue to-neon-purple">
-              🍎 Cosmetics Store
+              🎁 Cosmetics Store
             </h1>
           </div>
           
           <div className="bg-red-900/30 px-4 py-2 rounded-lg border border-red-700/30">
-            <span className="text-xl font-black text-red-400">🍎 {appleBalance}</span>
+            <span className="text-xl font-black text-red-400">🎁 {appleBalance}</span>
           </div>
         </div>
 
@@ -175,42 +195,51 @@ export default function StorePage() {
                           : 'bg-gray-900/30 border-gray-700/30'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
-                          <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
-                              {isUnlocked && (
-                                <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
-                                  OWNED
-                                </span>
-                              )}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
+                                {isUnlocked && (
+                                  <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
+                                    OWNED
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-400">{cosmetic.description}</p>
                             </div>
-                            <p className="text-sm text-gray-400">{cosmetic.description}</p>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-2xl font-black text-red-400">🎁 {cosmetic.cost}</div>
+
+                            {isUnlocked ? (
+                              <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
+                                ✓
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setSelectedCosmetic(cosmetic)}
+                                disabled={!canAfford}
+                                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                                  canAfford
+                                    ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
+                                    : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
+                                }`}
+                              >
+                                {canAfford ? 'Buy' : 'Locked'}
+                              </button>
+                            )}
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-3">
-                          <div className="text-2xl font-black text-red-400">🍎 {cosmetic.cost}</div>
-
-                          {isUnlocked ? (
-                            <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
-                              ✓
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setSelectedCosmetic(cosmetic)}
-                              disabled={!canAfford}
-                              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
-                                canAfford
-                                  ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
-                                  : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
-                              }`}
-                            >
-                              {canAfford ? 'Buy' : 'Locked'}
-                            </button>
-                          )}
+                        
+                        {/* Preview */}
+                        <div className="bg-black/50 rounded-lg p-2 border border-gray-700/30 h-32">
+                          <SnakePreview
+                            equippedCosmetics={{ trail: cosmetic.id }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -239,42 +268,51 @@ export default function StorePage() {
                           : 'bg-gray-900/30 border-gray-700/30'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
-                          <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
-                              {isUnlocked && (
-                                <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
-                                  OWNED
-                                </span>
-                              )}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
+                                {isUnlocked && (
+                                  <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
+                                    OWNED
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-400">{cosmetic.description}</p>
                             </div>
-                            <p className="text-sm text-gray-400">{cosmetic.description}</p>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-2xl font-black text-red-400">🎁 {cosmetic.cost}</div>
+
+                            {isUnlocked ? (
+                              <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
+                                ✓
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setSelectedCosmetic(cosmetic)}
+                                disabled={!canAfford}
+                                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                                  canAfford
+                                    ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
+                                    : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
+                                }`}
+                              >
+                                {canAfford ? 'Buy' : 'Locked'}
+                              </button>
+                            )}
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-3">
-                          <div className="text-2xl font-black text-red-400">🍎 {cosmetic.cost}</div>
-
-                          {isUnlocked ? (
-                            <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
-                              ✓
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setSelectedCosmetic(cosmetic)}
-                              disabled={!canAfford}
-                              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
-                                canAfford
-                                  ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
-                                  : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
-                              }`}
-                            >
-                              {canAfford ? 'Buy' : 'Locked'}
-                            </button>
-                          )}
+                        
+                        {/* Preview */}
+                        <div className="bg-black/50 rounded-lg p-2 border border-gray-700/30 h-36">
+                          <SnakePreview
+                            equippedCosmetics={{ headItem: cosmetic.id }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -303,42 +341,53 @@ export default function StorePage() {
                           : 'bg-gray-900/30 border-gray-700/30'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
-                          <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
-                              {isUnlocked && (
-                                <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
-                                  OWNED
-                                </span>
-                              )}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className="text-4xl">{getCosmeticIcon(cosmetic)}</div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-lg font-bold text-white">{cosmetic.name}</h3>
+                                {isUnlocked && (
+                                  <span className="px-2 py-0.5 bg-green-600/30 text-green-400 text-xs font-bold rounded">
+                                    OWNED
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-400">{cosmetic.description}</p>
                             </div>
-                            <p className="text-sm text-gray-400">{cosmetic.description}</p>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-2xl font-black text-red-400">🎁 {cosmetic.cost}</div>
+
+                            {isUnlocked ? (
+                              <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
+                                ✓
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setSelectedCosmetic(cosmetic)}
+                                disabled={!canAfford}
+                                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                                  canAfford
+                                    ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
+                                    : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
+                                }`}
+                              >
+                                {canAfford ? 'Buy' : 'Locked'}
+                              </button>
+                            )}
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-3">
-                          <div className="text-2xl font-black text-red-400">🍎 {cosmetic.cost}</div>
-
-                          {isUnlocked ? (
-                            <div className="px-4 py-2 bg-green-600/20 text-green-400 rounded-lg font-bold text-sm">
-                              ✓
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setSelectedCosmetic(cosmetic)}
-                              disabled={!canAfford}
-                              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
-                                canAfford
-                                  ? 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white'
-                                  : 'bg-gray-700/30 text-gray-500 cursor-not-allowed'
-                              }`}
-                            >
-                              {canAfford ? 'Buy' : 'Locked'}
-                            </button>
-                          )}
+                        
+                        {/* Preview */}
+                        <div className="bg-black/50 rounded-lg p-2 border border-gray-700/30 h-36">
+                          <SnakePreview
+                            equippedCosmetics={{ nameStyle: cosmetic.id }}
+                            showName={true}
+                            playerName="Preview"
+                          />
                         </div>
                       </div>
                     </div>
@@ -365,22 +414,34 @@ export default function StorePage() {
               
               <div className="bg-black/30 rounded-xl p-4 mb-4">
                 <div className="text-lg font-bold text-white mb-1">{selectedCosmetic.name}</div>
-                <div className="text-sm text-gray-300">{selectedCosmetic.description}</div>
+                <div className="text-sm text-gray-300 mb-3">{selectedCosmetic.description}</div>
+                
+                {/* Preview */}
+                <div className="bg-black/60 rounded-lg p-3 border border-gray-700/30">
+                  <div className="text-xs text-gray-400 mb-2 text-center">Preview</div>
+                  <div className="h-40">
+                    <SnakePreview
+                      equippedCosmetics={{ [selectedCosmetic.category]: selectedCosmetic.id }}
+                      showName={selectedCosmetic.category === 'nameStyle'}
+                      playerName="Preview"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="bg-black/30 rounded-xl p-4 mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-gray-400">Cost:</span>
-                  <span className="text-2xl font-black text-red-400">🍎 {selectedCosmetic.cost}</span>
+                  <span className="text-2xl font-black text-red-400">🎁 {selectedCosmetic.cost}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">Your Balance:</span>
-                  <span className="text-xl font-bold text-white">🍎 {appleBalance}</span>
+                  <span className="text-xl font-bold text-white">🎁 {appleBalance}</span>
                 </div>
                 <div className="border-t border-gray-700 my-2"></div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">After Purchase:</span>
-                  <span className="text-xl font-bold text-green-400">🍎 {appleBalance - selectedCosmetic.cost}</span>
+                  <span className="text-xl font-bold text-green-400">🎁 {appleBalance - selectedCosmetic.cost}</span>
                 </div>
               </div>
 
@@ -401,6 +462,27 @@ export default function StorePage() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: 50 }}
+            animate={{ opacity: 1, y: 0, x: 0 }}
+            exit={{ opacity: 0, y: 50, x: 50 }}
+            className={`fixed bottom-8 right-8 ${
+              toastMessage.type === 'success' 
+                ? 'bg-gradient-to-r from-green-900 to-emerald-900 border-green-500/50' 
+                : 'bg-gradient-to-r from-red-900 to-orange-900 border-red-500/50'
+            } border-2 rounded-xl px-6 py-4 shadow-2xl z-50 max-w-md`}
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">{toastMessage.type === 'success' ? '✅' : '❌'}</span>
+              <p className="text-white font-medium">{toastMessage.message}</p>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

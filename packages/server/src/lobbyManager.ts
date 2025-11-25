@@ -551,9 +551,22 @@ export class LobbyManager {
       return;
     }
     
+    // Available cosmetics for systematic assignment (ensure all are used)
+    const trails = ['trail_basic_glow', 'trail_rainbow', 'trail_fire', 'trail_lightning', 'trail_shadow'];
+    const headItems = ['head_party_hat', 'head_halo', 'head_sunglasses', 'head_crown', 'head_devil_horns'];
+    const nameStyles = ['name_rainbow', 'name_gold_glow', 'name_neon_pulse', 'name_fire', 'name_ice'];
+    
     for (let i = 0; i < needed; i++) {
       const botId = `bot_${Date.now()}_${i}`;
       const botName = `Bot ${currentBotCount + i + 1}`;
+      
+      // Assign cosmetics systematically to ensure ALL cosmetics are demoed
+      // Each bot gets one from each category, cycling through all options
+      const randomCosmetics: any = {
+        trail: trails[i % trails.length],
+        headItem: headItems[i % headItems.length],
+        nameStyle: nameStyles[i % nameStyles.length],
+      };
 
       lobby.players.set(botId, {
         id: botId,
@@ -572,6 +585,7 @@ export class LobbyManager {
         joinTime: Date.now(),
         lastInputTime: Date.now(),
         isBot: true,
+        equippedCosmetics: randomCosmetics,
       });
     }
 

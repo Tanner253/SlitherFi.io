@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { SnakePreview } from './SnakePreview';
 
 interface UserProfile {
   walletAddress: string;
@@ -101,15 +102,46 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
       const { io } = await import('socket.io-client');
       const socket = io(serverUrl);
 
-      socket.emit('unequipCosmetic', { walletAddress, slot });
-      socket.on('unequipResult', (result: any) => {
-        if (result.success) {
-          setEquippedCosmetics(result.equippedCosmetics);
-        }
-        socket.disconnect();
+      // Wait for connection before emitting
+      socket.on('connect', () => {
+        console.log('🔌 Connected to server for unequip');
+        socket.emit('unequipCosmetic', { walletAddress, slot });
       });
+
+      socket.on('unequipResult', (result: any) => {
+        console.log('📦 Unequip result received:', result);
+        if (result.success) {
+          // IMPORTANT: Create a new object without the unequipped slot
+          const newEquipped = { ...equippedCosmetics };
+          delete newEquipped[slot]; // Remove the slot
+          
+          console.log('✅ Updating equipped cosmetics to:', newEquipped);
+          console.log('   Removed slot:', slot);
+          
+          setEquippedCosmetics(newEquipped);
+          
+          // Force re-render by also updating profile if it exists
+          if (profile) {
+            setProfile({
+              ...profile,
+              equippedCosmetics: newEquipped
+            });
+          }
+          
+          // Disconnect after state update
+          setTimeout(() => socket.disconnect(), 100);
+        } else {
+          console.error('❌ Failed to unequip:', result.error);
+          socket.disconnect();
+        }
+      });
+      
+      // Timeout safety
+      setTimeout(() => {
+        socket.disconnect();
+      }, 5000);
     } catch (error) {
-      console.error('Failed to unequip cosmetic:', error);
+      console.error('❌ Failed to unequip cosmetic:', error);
     }
   };
 
@@ -307,7 +339,7 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                   <div className="bg-black/30 rounded-xl p-4 col-span-2">
                     <div className="text-sm text-emerald-400/70 mb-1">Apples Collected</div>
                     <div className="text-3xl font-black text-red-400 flex items-center justify-center gap-2">
-                      🍎 {appleBalance}
+                      🎁 {appleBalance}
                     </div>
                   </div>
                 </div>
@@ -318,6 +350,21 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                     <h3 className="text-lg font-bold text-green-300">Equipped Cosmetics</h3>
                     <span className="text-xs text-gray-400">{unlockedCosmetics.length} items owned</span>
                   </div>
+                  
+                  {/* Full Loadout Preview */}
+                  <div className="bg-black/50 rounded-xl p-4 border border-green-700/30 mb-4">
+                    <div className="text-center mb-2">
+                      <div className="text-xs text-gray-400">Your Snake</div>
+                    </div>
+                    <div className="h-48 w-full">
+                      <SnakePreview
+                        equippedCosmetics={equippedCosmetics}
+                        showName={true}
+                        playerName={profile.username}
+                      />
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-3 gap-3">
                     {/* Trail Slot */}
                     <button
@@ -383,7 +430,7 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                     >
                       <span>🏪</span>
                       <span>Visit Store</span>
-                      <span>🍎</span>
+                      <span>🎁</span>
                     </a>
                   </div>
                 </div>

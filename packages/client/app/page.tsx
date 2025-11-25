@@ -11,6 +11,7 @@ import { createPaymentPayload, encodePaymentPayload, type PaymentRequiredRespons
 import { signChallenge, encodeAuthHeader, type AuthRequiredResponse, type AuthChallenge } from './lib/x403';
 import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
+import SnowEffect from './components/SnowEffect';
 
 interface ChatMessage {
   id: string;
@@ -812,6 +813,9 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-b from-green-950 via-emerald-900 to-green-950">
+      {/* Christmas snow effect */}
+      <SnowEffect />
+      
       {/* Jungle vines and foliage background */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-0 left-0 w-64 h-64 bg-green-600 rounded-full blur-3xl" />
@@ -961,7 +965,7 @@ export default function HomePage() {
                   )}
                   <div className="flex items-center bg-red-900/30 px-3 py-1.5 rounded-lg border border-red-700/30">
                     <span className="text-xs text-red-400 font-bold">
-                      🍎 {appleBalance}
+                      🎁 {appleBalance}
                     </span>
                   </div>
                 </div>
@@ -1096,7 +1100,7 @@ export default function HomePage() {
                   transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                   className="text-6xl"
                 >
-                  🍎
+                  🎁
                 </motion.div>
               </div>
             </motion.button>
@@ -1371,12 +1375,18 @@ export default function HomePage() {
                                   </div>
                                 </div>
                                 <div className="text-5xl font-black text-purple-400 mb-4">FREE</div>
-                                <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/20 border border-purple-400/30 rounded-lg">
-                                  <span className="text-purple-300 text-sm">
-                                    <span className="font-bold">Mass:</span> 1x  
-                                    <span className="mx-2">|</span>
-                                    <span className="font-bold">Speed:</span> +0%
-                                  </span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/20 border border-purple-400/30 rounded-lg">
+                                    <span className="text-purple-300 text-sm">
+                                      <span className="font-bold">Mass:</span> 1x  
+                                      <span className="mx-2">|</span>
+                                      <span className="font-bold">Speed:</span> +0%
+                                    </span>
+                                  </div>
+                                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 border border-red-400/40 rounded-lg">
+                                    <span className="text-lg">🎁</span>
+                                    <span className="text-green-400 text-xs font-bold">10%</span>
+                                  </div>
                                 </div>
                               </div>
                               
@@ -1469,13 +1479,17 @@ export default function HomePage() {
                                 <div className="text-3xl font-black text-green-400 mb-3">${mode.buyIn.toFixed(2)}</div>
                                 
                                 {/* Stat Multipliers Badge */}
-                                <div className="mb-4">
+                                <div className="mb-4 flex flex-wrap items-center gap-2">
                                   <div className="inline-flex items-center gap-2 px-3 py-2 bg-yellow-500/20 border border-yellow-400/40 rounded-lg">
                                     <span className="text-yellow-300 text-xs">
                                       <span className="font-bold">Mass:</span> {mode.statMultiplier}x  
                                       <span className="mx-1.5">|</span>
                                       <span className="font-bold">Speed:</span> +{(((mode.statMultiplier || 1) - 1) * 10).toFixed(0)}%
                                     </span>
+                                  </div>
+                                  <div className="inline-flex items-center gap-1.5 px-2 py-1.5 bg-red-500/20 border border-red-400/40 rounded-lg">
+                                    <span className="text-base">🎁</span>
+                                    <span className="text-green-400 text-xs font-bold">100%</span>
                                   </div>
                                 </div>
                                 

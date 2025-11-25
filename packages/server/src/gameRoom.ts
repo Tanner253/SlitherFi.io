@@ -60,19 +60,14 @@ export class GameRoom {
    * Initialize pellets across the map
    */
   private initializePellets(): void {
-    const pelletColors = [
-      '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
-      '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2',
-      '#F8B739', '#52B788', '#E63946', '#A8DADC'
-    ];
-
+    // CHRISTMAS THEME: All pellets are white (snow on ground)
     for (let i = 0; i < config.game.pelletCount; i++) {
       const pellet: Pellet = {
         id: `pellet_${i}`,
         x: Math.random() * config.game.mapWidth,
         y: Math.random() * config.game.mapHeight,
         mass: 1,
-        color: pelletColors[Math.floor(Math.random() * pelletColors.length)],
+        color: '#FFFFFF', // White for snow effect
       };
       this.pellets.set(pellet.id, pellet);
     }
@@ -1111,12 +1106,7 @@ export class GameRoom {
    * Respawn pellets to maintain count (only within current map bounds)
    */
   private respawnPellets(): void {
-    const pelletColors = [
-      '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
-      '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2',
-      '#F8B739', '#52B788', '#E63946', '#A8DADC'
-    ];
-
+    // CHRISTMAS THEME: All pellets are white (snow on ground)
     const target = config.game.pelletCount;
     const current = this.pellets.size;
 
@@ -1128,7 +1118,7 @@ export class GameRoom {
         x: this.currentMapBounds.minX + MARGIN + Math.random() * (this.currentMapBounds.maxX - this.currentMapBounds.minX - MARGIN * 2),
         y: this.currentMapBounds.minY + MARGIN + Math.random() * (this.currentMapBounds.maxY - this.currentMapBounds.minY - MARGIN * 2),
         mass: 1,
-        color: pelletColors[Math.floor(Math.random() * pelletColors.length)],
+        color: '#FFFFFF', // White for snow effect
       };
       this.pellets.set(pellet.id, pellet);
     }

@@ -126,6 +126,9 @@ export default function GamePage() {
   const [currentUsername, setCurrentUsername] = useState('');
   const [isBoosting, setIsBoosting] = useState(false);
 
+  // Snow particles for falling snow effect
+  const snowParticlesRef = useRef<Array<{ x: number; y: number; speed: number; drift: number; size: number }>>([]);
+
   // Contract Address
   const CONTRACT_ADDRESS = 'JAxqon7z7uzjZ5f97amnytgrEDJMbVnPxRFqPzwwpump';
   const [copied, setCopied] = useState(false);
@@ -151,7 +154,10 @@ export default function GamePage() {
     const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
     
     // Load username
-    if (walletAddress) {
+    const spectateMode = localStorage.getItem('spectateMode');
+    const isSpectator = spectateMode === 'true';
+    
+    if (!isSpectator && walletAddress) {
       fetch(`${serverUrl}/api/user/${walletAddress}`)
         .then(res => res.json())
         .then(data => {
@@ -165,7 +171,7 @@ export default function GamePage() {
           setUsernameLoaded(true); // Proceed even on error
         });
     } else {
-      setUsernameLoaded(true); // No wallet, assume spectator or no name
+      setUsernameLoaded(true); // Spectator or no wallet, don't need username
     }
     
     // Load chat history
@@ -259,11 +265,29 @@ export default function GamePage() {
     } else {
       // Joining as player
       console.log('🎮 PLAYER MODE - playerId:', playerId);
-      if (!playerId || !playerName || !tier) {
-        console.error('❌ Missing player credentials, redirecting');
+      console.log('   PlayerName:', playerName);
+      console.log('   Tier:', tier);
+      console.log('   UsernameLoaded:', usernameLoaded);
+      
+      if (!playerId || !tier) {
+        console.error('❌ Missing playerId or tier, redirecting');
         router.push('/');
         return;
       }
+      
+      // If username not loaded yet, let it load (we returned early above)
+      if (!playerName && !usernameLoaded) {
+        console.log('⏳ Waiting for username to load...');
+        return;
+      }
+      
+      // If we got here and still no playerName, use a default or redirect
+      if (!playerName) {
+        console.error('❌ Username failed to load, redirecting');
+        router.push('/?error=Please set your username first');
+        return;
+      }
+      
       setMyPlayerId(playerId);
       playerIdRef.current = playerId;
     }
@@ -342,11 +366,11 @@ export default function GamePage() {
     });
 
     socket.on('refundProcessed', ({ amount, tx }) => {
-      alert(`✅ Refund processed: $${amount} USDC sent back to your wallet`);
+      setToastMessage({ message: `✅ Refund processed: $${amount} USDC sent back to your wallet`, type: 'success' });
     });
 
     socket.on('refundFailed', ({ error }) => {
-      alert(`⚠️ Refund failed: ${error}. Please contact support.`);
+      setToastMessage({ message: `⚠️ Refund failed: ${error}. Please contact support.`, type: 'error' });
     });
 
     // Listen for payout transaction signature from server
@@ -629,7 +653,7 @@ export default function GamePage() {
       if (rewardedPlayerId === playerId) {
         setAppleEarned(true);
         const reasonText = reason === 'held_at_end' ? 'You held the apple!' : 'You eliminated the apple holder!';
-        setToastMessage({ message: `🍎 +1 Apple Earned! (${reasonText}) | Total: ${newBalance}`, type: 'success' });
+        setToastMessage({ message: `🎁 +1 Present Earned! (${reasonText}) | Total: ${newBalance}`, type: 'success' });
       }
     });
 
@@ -664,7 +688,7 @@ export default function GamePage() {
       
       socket.disconnect();
     };
-  }, [router, usernameLoaded, currentUsername]);
+  }, [router, usernameLoaded]); // Removed currentUsername to prevent re-runs
 
   // Auto-dismiss toast after 3 seconds
   useEffect(() => {
@@ -991,11 +1015,11 @@ export default function GamePage() {
         ctx.strokeRect(mapBounds.minX, mapBounds.minY, mapBounds.maxX - mapBounds.minX, mapBounds.maxY - mapBounds.minY);
       }
 
-      // Draw pellets as diamonds
+      // Draw pellets as white diamonds (snow on ground)
       pellets.forEach(pellet => {
-        const pelletSize = 3; // Reduced to 50% of previous size
+        const pelletSize = 3;
         
-        ctx.fillStyle = pellet.color || '#4ECDC4';
+        ctx.fillStyle = '#FFFFFF'; // White snow
         ctx.beginPath();
         ctx.moveTo(pellet.x, pellet.y - pelletSize); // Top
         ctx.lineTo(pellet.x + pelletSize, pellet.y); // Right
@@ -1004,13 +1028,52 @@ export default function GamePage() {
         ctx.closePath();
         ctx.fill();
         
-        // Add slight glow with pellet's color
-        ctx.strokeStyle = pellet.color || '#4ECDC4';
+        // Add slight glow for snow
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = 0.5 / camera.zoom;
         ctx.stroke();
       });
 
       const now = Date.now();
+      
+      // Initialize and update snow particles (falling snow effect)
+      const gameProgress = timeRemaining !== null ? Math.max(0, 1 - (timeRemaining / 300)) : 0.3;
+      const targetSnowCount = Math.floor(150 + (gameProgress * 150)); // 150 to 300 particles
+      
+      // Add new snow particles if needed
+      while (snowParticlesRef.current.length < targetSnowCount) {
+        snowParticlesRef.current.push({
+          x: Math.random() * 5000,
+          y: Math.random() * 5000,
+          speed: Math.random() * 1.5 + 0.5,
+          drift: Math.random() * 0.3 - 0.15,
+          size: Math.random() * 1.5 + 1
+        });
+      }
+      
+      // Remove excess particles
+      if (snowParticlesRef.current.length > targetSnowCount) {
+        snowParticlesRef.current = snowParticlesRef.current.slice(0, targetSnowCount);
+      }
+      
+      // Update and draw snow particles
+      snowParticlesRef.current.forEach(particle => {
+        particle.y += particle.speed;
+        particle.x += particle.drift;
+        
+        if (particle.y > 5000) particle.y = 0;
+        if (particle.x > 5000) particle.x = 0;
+        if (particle.x < 0) particle.x = 5000;
+        
+        ctx.fillStyle = `rgba(255, 255, 255, 0.8)`;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size / camera.zoom, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = `rgba(255, 255, 255, 0.4)`;
+        ctx.lineWidth = 0.5 / camera.zoom;
+        ctx.stroke();
+      });
       
       // Filter animations locally - don't call setState in render loop!
       const activeKillAnimations = killAnimations.filter(a => now - a.startTime < 400);
@@ -1031,31 +1094,116 @@ export default function GamePage() {
         // Check for kill animation (sun rays + glow)
         const killAnim = activeKillAnimations.find(a => a.blobId === snake.id);
         
-        // Draw trail cosmetic (if equipped)
+        // Draw trail cosmetic (if equipped) - ALL TRAILS IMPLEMENTED
         const cosmetics = snake.equippedCosmetics || {};
+        const trailLength = Math.min(snake.segments.length, 15);
+        
         if (cosmetics.trail === 'trail_basic_glow') {
           // Simple glow trail
-          for (let i = 1; i < Math.min(snake.segments.length, 10); i++) {
+          for (let i = 1; i < trailLength; i++) {
             const seg = snake.segments[i];
-            const alpha = 1 - (i / 10);
+            const alpha = 1 - (i / trailLength);
             ctx.save();
-            ctx.globalAlpha = alpha * 0.3;
+            ctx.globalAlpha = alpha * 0.6;
             ctx.fillStyle = '#4ECDC4';
             ctx.shadowColor = '#4ECDC4';
-            ctx.shadowBlur = 15;
+            ctx.shadowBlur = 25;
+            ctx.beginPath();
+            ctx.arc(seg.x, seg.y, segmentRadius + 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        } else if (cosmetics.trail === 'trail_rainbow') {
+          // Rainbow trail with animated cycling colors
+          const rainbowColors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
+          for (let i = 1; i < trailLength; i++) {
+            const seg = snake.segments[i];
+            const alpha = 1 - (i / trailLength);
+            const colorIndex = (i + Math.floor(now / 100)) % rainbowColors.length;
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.7;
+            ctx.fillStyle = rainbowColors[colorIndex];
+            ctx.shadowColor = rainbowColors[colorIndex];
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(seg.x, seg.y, segmentRadius + 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        } else if (cosmetics.trail === 'trail_fire') {
+          // Fire trail with flickering
+          const fireColors = ['#FF4500', '#FF6347', '#FFD700', '#FF8C00'];
+          for (let i = 1; i < trailLength; i++) {
+            const seg = snake.segments[i];
+            const alpha = 1 - (i / trailLength);
+            const colorIndex = Math.floor(Math.random() * fireColors.length);
+            const flicker = 0.7 + Math.random() * 0.3;
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.8 * flicker;
+            ctx.fillStyle = fireColors[colorIndex];
+            ctx.shadowColor = '#FF4500';
+            ctx.shadowBlur = 30;
+            ctx.beginPath();
+            ctx.arc(seg.x, seg.y, segmentRadius + 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        } else if (cosmetics.trail === 'trail_lightning') {
+          // Lightning trail with sparks
+          const lightningColors = ['#00F0FF', '#FFFFFF', '#4169E1'];
+          for (let i = 1; i < trailLength; i++) {
+            const seg = snake.segments[i];
+            const alpha = 1 - (i / trailLength);
+            const colorIndex = Math.floor(Math.random() * lightningColors.length);
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.9;
+            ctx.fillStyle = lightningColors[colorIndex];
+            ctx.shadowColor = '#00F0FF';
+            ctx.shadowBlur = 35;
             ctx.beginPath();
             ctx.arc(seg.x, seg.y, segmentRadius + 5, 0, Math.PI * 2);
+            ctx.fill();
+            // Random spark effect
+            if (Math.random() < 0.3) {
+              ctx.strokeStyle = '#FFFFFF';
+              ctx.lineWidth = 2 / camera.zoom;
+              ctx.beginPath();
+              ctx.moveTo(seg.x, seg.y);
+              ctx.lineTo(seg.x + (Math.random() - 0.5) * 10, seg.y + (Math.random() - 0.5) * 10);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        } else if (cosmetics.trail === 'trail_shadow') {
+          // Shadow/smoke trail
+          const shadowColors = ['#2E003E', '#3D0066', '#1A001F'];
+          for (let i = 1; i < trailLength; i++) {
+            const seg = snake.segments[i];
+            const alpha = 1 - (i / trailLength);
+            const colorIndex = i % shadowColors.length;
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.5;
+            ctx.fillStyle = shadowColors[colorIndex];
+            ctx.shadowColor = '#2E003E';
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(seg.x, seg.y, segmentRadius + 10, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
           }
         }
 
-        // Draw body segments (connected circles)
-        for (let i = snake.segments.length - 1; i >= 0; i--) {
+        // Determine candy cane pattern starting color (consistent per snake)
+        const startsWithRed = parseInt(snake.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0).toString()) % 2 === 0;
+        
+        // Draw body segments with candy cane pattern
+        for (let i = snake.segments.length - 1; i >= 1; i--) {
           const seg = snake.segments[i];
-          const radius = i === 0 ? headRadius : segmentRadius;
+          const radius = segmentRadius;
           
-          ctx.fillStyle = snake.color;
+          // Candy cane alternating pattern: red and white
+          const isRedSegment = startsWithRed ? (i % 2 === 0) : (i % 2 === 1);
+          ctx.fillStyle = isRedSegment ? '#DC143C' : '#FFFFFF';
           ctx.beginPath();
           ctx.arc(seg.x, seg.y, radius, 0, Math.PI * 2);
           ctx.fill();
@@ -1066,8 +1214,48 @@ export default function GamePage() {
           ctx.stroke();
         }
         
-        // Draw head (slightly larger with eyes)
+        // Draw head with candy cane color
         const head = snake.segments[0];
+        const isRedHead = startsWithRed ? true : false;
+        ctx.fillStyle = isRedHead ? '#DC143C' : '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(head.x, head.y, headRadius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = snake.playerId === myPlayerId ? '#FFD700' : (isSpectating && snake.playerId === spectatingPlayerId ? '#4ECDC4' : 'rgba(0,0,0,0.3)');
+        ctx.lineWidth = 2 / camera.zoom;
+        ctx.stroke();
+        
+        // Draw HELD present (in mouth) before boost glow
+        if (apple && apple.heldBy === snake.playerId) {
+          const angle = snake.angle || 0;
+          const PRESENT_SIZE_HELD = 9;
+          const PRESENT_OFFSET = 14;
+          const presentX = head.x + Math.cos(angle) * PRESENT_OFFSET;
+          const presentY = head.y + Math.sin(angle) * PRESENT_OFFSET;
+          const presentSize = PRESENT_SIZE_HELD;
+          
+          const boxGradient = ctx.createLinearGradient(presentX - presentSize, presentY - presentSize, presentX + presentSize, presentY + presentSize);
+          boxGradient.addColorStop(0, '#DC143C');
+          boxGradient.addColorStop(1, '#8B0000');
+          ctx.fillStyle = boxGradient;
+          ctx.fillRect(presentX - presentSize, presentY - presentSize, presentSize * 2, presentSize * 2);
+          
+          ctx.fillStyle = '#FFD700';
+          ctx.fillRect(presentX - presentSize, presentY - presentSize * 0.2, presentSize * 2, presentSize * 0.4);
+          ctx.fillRect(presentX - presentSize * 0.2, presentY - presentSize, presentSize * 0.4, presentSize * 2);
+          
+          ctx.fillStyle = '#FFD700';
+          ctx.beginPath();
+          ctx.ellipse(presentX - presentSize * 0.5, presentY - presentSize * 1.2, presentSize * 0.4, presentSize * 0.3, -Math.PI / 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(presentX + presentSize * 0.5, presentY - presentSize * 1.2, presentSize * 0.4, presentSize * 0.3, Math.PI / 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(presentX, presentY - presentSize * 1.1, presentSize * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+        }
         
         // Add boost glow if boosting
         if (snake.isBoosting) {
@@ -1082,55 +1270,201 @@ export default function GamePage() {
           ctx.restore();
         }
         
-        // Draw eyes on head
+        // Calculate eye positions (needed for sunglasses)
         const eyeOffset = 8;
         const eyeRadius = 4;
         const angle = snake.angle || 0;
         
-        // Left eye
         const leftEyeX = head.x + Math.cos(angle - Math.PI / 6) * eyeOffset;
         const leftEyeY = head.y + Math.sin(angle - Math.PI / 6) * eyeOffset;
-        ctx.fillStyle = 'white';
-        ctx.beginPath();
-        ctx.arc(leftEyeX, leftEyeY, eyeRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'black';
-        ctx.beginPath();
-        ctx.arc(leftEyeX, leftEyeY, eyeRadius * 0.5, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Right eye
         const rightEyeX = head.x + Math.cos(angle + Math.PI / 6) * eyeOffset;
         const rightEyeY = head.y + Math.sin(angle + Math.PI / 6) * eyeOffset;
-        ctx.fillStyle = 'white';
-        ctx.beginPath();
-        ctx.arc(rightEyeX, rightEyeY, eyeRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'black';
-        ctx.beginPath();
-        ctx.arc(rightEyeX, rightEyeY, eyeRadius * 0.5, 0, Math.PI * 2);
-        ctx.fill();
+        
+        // Draw eyes ONLY if not wearing sunglasses
+        if (cosmetics.headItem !== 'head_sunglasses') {
+          // Left eye
+          ctx.fillStyle = 'white';
+          ctx.beginPath();
+          ctx.arc(leftEyeX, leftEyeY, eyeRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'black';
+          ctx.beginPath();
+          ctx.arc(leftEyeX, leftEyeY, eyeRadius * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Right eye
+          ctx.fillStyle = 'white';
+          ctx.beginPath();
+          ctx.arc(rightEyeX, rightEyeY, eyeRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'black';
+          ctx.beginPath();
+          ctx.arc(rightEyeX, rightEyeY, eyeRadius * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
         
         // Draw head item cosmetic (if equipped)
         if (cosmetics.headItem === 'head_party_hat') {
-          // Simple triangle hat above head
-          ctx.fillStyle = '#FF10F0';
+          // Colorful party hat
+          ctx.save();
+          const gradient = ctx.createLinearGradient(head.x, head.y - headRadius - 18, head.x, head.y - headRadius);
+          gradient.addColorStop(0, '#FF10F0');
+          gradient.addColorStop(0.5, '#00F0FF');
+          gradient.addColorStop(1, '#FFFF00');
+          ctx.fillStyle = gradient;
           ctx.beginPath();
           ctx.moveTo(head.x, head.y - headRadius - 18);
           ctx.lineTo(head.x - 6, head.y - headRadius);
           ctx.lineTo(head.x + 6, head.y - headRadius);
           ctx.closePath();
           ctx.fill();
-        } else if (cosmetics.headItem === 'head_halo') {
-          // Glowing ring above head
-          ctx.save();
-          ctx.strokeStyle = '#FFD700';
-          ctx.lineWidth = 2 / camera.zoom;
-          ctx.shadowColor = '#FFD700';
-          ctx.shadowBlur = 10;
+          ctx.fillStyle = '#FFFFFF';
           ctx.beginPath();
-          ctx.arc(head.x, head.y - headRadius - 12, 12, 0, Math.PI * 2);
+          ctx.arc(head.x, head.y - headRadius - 18, 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } else if (cosmetics.headItem === 'head_halo') {
+          // Improved glowing halo
+          ctx.save();
+          ctx.globalAlpha = 0.4;
+          ctx.strokeStyle = '#FFD700';
+          ctx.lineWidth = 6 / camera.zoom;
+          ctx.shadowColor = '#FFD700';
+          ctx.shadowBlur = 25;
+          ctx.beginPath();
+          ctx.arc(head.x, head.y - headRadius - 8, 11, 0, Math.PI * 2);
           ctx.stroke();
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = '#FFEB3B';
+          ctx.lineWidth = 2.5 / camera.zoom;
+          ctx.shadowBlur = 15;
+          ctx.beginPath();
+          ctx.arc(head.x, head.y - headRadius - 8, 11, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        } else if (cosmetics.headItem === 'head_sunglasses') {
+          // Cool sunglasses over eyes
+          ctx.save();
+          ctx.fillStyle = '#1a1a1a';
+          ctx.beginPath();
+          ctx.ellipse(leftEyeX, leftEyeY, 4.5 / camera.zoom, 3.5 / camera.zoom, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(rightEyeX, rightEyeY, 4.5 / camera.zoom, 3.5 / camera.zoom, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#1a1a1a';
+          ctx.lineWidth = 2 / camera.zoom;
+          ctx.beginPath();
+          ctx.moveTo(leftEyeX + 3, leftEyeY);
+          ctx.lineTo(rightEyeX - 3, rightEyeY);
+          ctx.stroke();
+          ctx.strokeStyle = '#8B4513';
+          ctx.lineWidth = 1 / camera.zoom;
+          ctx.beginPath();
+          ctx.ellipse(leftEyeX, leftEyeY, 4.5 / camera.zoom, 3.5 / camera.zoom, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.ellipse(rightEyeX, rightEyeY, 4.5 / camera.zoom, 3.5 / camera.zoom, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.beginPath();
+          ctx.ellipse(leftEyeX - 1.5, leftEyeY - 1.5, 1.2, 0.8, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(rightEyeX - 1.5, rightEyeY - 1.5, 1.2, 0.8, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } else if (cosmetics.headItem === 'head_devil_horns') {
+          // Devil horns
+          ctx.save();
+          ctx.fillStyle = '#DC143C';
+          ctx.shadowColor = '#8B0000';
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.moveTo(head.x - 10, head.y - headRadius - 5);
+          ctx.quadraticCurveTo(head.x - 12, head.y - headRadius - 10, head.x - 9, head.y - headRadius - 15);
+          ctx.lineTo(head.x - 8, head.y - headRadius - 5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(head.x + 10, head.y - headRadius - 5);
+          ctx.quadraticCurveTo(head.x + 12, head.y - headRadius - 10, head.x + 9, head.y - headRadius - 15);
+          ctx.lineTo(head.x + 8, head.y - headRadius - 5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        } else if (cosmetics.headItem === 'head_crown') {
+          // Royal Crown - IMPROVED ornate design
+          ctx.save();
+          const crownBase = head.y - headRadius - 8;
+          const crownTop = head.y - headRadius - 22;
+          
+          // Draw crown base (band) with gradient
+          const baseGradient = ctx.createLinearGradient(head.x - 12, crownBase, head.x + 12, crownBase);
+          baseGradient.addColorStop(0, '#B8860B');
+          baseGradient.addColorStop(0.5, '#FFD700');
+          baseGradient.addColorStop(1, '#B8860B');
+          ctx.fillStyle = baseGradient;
+          ctx.fillRect(head.x - 12, crownBase, 24, 4);
+          
+          // Draw crown points (3 elegant points)
+          ctx.fillStyle = '#FFD700';
+          ctx.strokeStyle = '#DAA520';
+          ctx.lineWidth = 1.5 / camera.zoom;
+          
+          // Left point
+          ctx.beginPath();
+          ctx.moveTo(head.x - 10, crownBase - 1);
+          ctx.lineTo(head.x - 8, crownTop + 6);
+          ctx.lineTo(head.x - 6, crownBase - 1);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          
+          // Center point (tallest)
+          ctx.beginPath();
+          ctx.moveTo(head.x - 3, crownBase - 1);
+          ctx.lineTo(head.x, crownTop);
+          ctx.lineTo(head.x + 3, crownBase - 1);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          
+          // Right point
+          ctx.beginPath();
+          ctx.moveTo(head.x + 6, crownBase - 1);
+          ctx.lineTo(head.x + 8, crownTop + 6);
+          ctx.lineTo(head.x + 10, crownBase - 1);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          
+          // Add jewels on each point
+          ctx.fillStyle = '#DC143C';
+          ctx.shadowColor = '#DC143C';
+          ctx.shadowBlur = 3;
+          // Left jewel
+          ctx.beginPath();
+          ctx.arc(head.x - 8, crownTop + 5, 2, 0, Math.PI * 2);
+          ctx.fill();
+          // Center jewel (larger)
+          ctx.beginPath();
+          ctx.arc(head.x, crownTop - 1, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+          // Right jewel
+          ctx.beginPath();
+          ctx.arc(head.x + 8, crownTop + 5, 2, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Add gold accents on base
+          ctx.fillStyle = '#FFD700';
+          ctx.shadowBlur = 0;
+          for (let i = -2; i <= 2; i++) {
+            ctx.beginPath();
+            ctx.arc(head.x + i * 5, crownBase + 2, 1, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          
           ctx.restore();
         }
         
@@ -1181,37 +1515,84 @@ export default function GamePage() {
         if (player) {
           const cosmetics = snake.equippedCosmetics || {};
           
-          // Apply name style cosmetics
+          // Apply name style cosmetics - ALL STYLES IMPLEMENTED
+          ctx.save();
+          ctx.font = `${Math.max(12, 14 / camera.zoom)}px Arial`;
+          ctx.textAlign = 'center';
+          
           if (cosmetics.nameStyle === 'name_rainbow') {
-            // Rainbow gradient text
-            const gradient = ctx.createLinearGradient(head.x - 50, 0, head.x + 50, 0);
+            // ANIMATED Rainbow gradient text
+            const offset = (now / 50) % 100;
+            const gradient = ctx.createLinearGradient(head.x - 50 + offset, 0, head.x + 50 + offset, 0);
             gradient.addColorStop(0, '#FF0000');
-            gradient.addColorStop(0.2, '#FFFF00');
-            gradient.addColorStop(0.4, '#00FF00');
-            gradient.addColorStop(0.6, '#00FFFF');
-            gradient.addColorStop(0.8, '#0000FF');
-            gradient.addColorStop(1, '#FF00FF');
+            gradient.addColorStop(0.16, '#FF7F00');
+            gradient.addColorStop(0.33, '#FFFF00');
+            gradient.addColorStop(0.5, '#00FF00');
+            gradient.addColorStop(0.66, '#0000FF');
+            gradient.addColorStop(0.83, '#4B0082');
+            gradient.addColorStop(1, '#9400D3');
             ctx.fillStyle = gradient;
+            ctx.shadowColor = '#000000';
+            ctx.shadowBlur = 4;
           } else if (cosmetics.nameStyle === 'name_gold_glow') {
-            // Gold with glow
+            // Gold with STRONG glow
             ctx.fillStyle = '#FFD700';
             ctx.shadowColor = '#FFD700';
-            ctx.shadowBlur = 10;
+            ctx.shadowBlur = 20;
+            ctx.strokeStyle = '#FFA500';
+            ctx.lineWidth = 1 / camera.zoom;
+            ctx.strokeText(player.name, head.x, head.y + headRadius + 20 / camera.zoom);
           } else if (cosmetics.nameStyle === 'name_neon_pulse') {
-            // Pulsing neon
-            const pulse = 0.7 + 0.3 * Math.sin(now / 500);
-            ctx.fillStyle = '#00F0FF';
-            ctx.shadowColor = '#00F0FF';
-            ctx.shadowBlur = 15 * pulse;
+            // RGB cycling neon pulse
+            const pulse = 0.85 + 0.3 * Math.sin(now / 300);
+            const colorShift = (now / 1000) % 3;
+            let r = 0, g = 0, b = 255;
+            if (colorShift < 1) {
+              r = Math.floor(255 * (1 - colorShift));
+              g = Math.floor(255 * colorShift);
+              b = 0;
+            } else if (colorShift < 2) {
+              r = 0;
+              g = Math.floor(255 * (2 - colorShift));
+              b = Math.floor(255 * (colorShift - 1));
+            } else {
+              r = Math.floor(255 * (colorShift - 2));
+              g = 0;
+              b = Math.floor(255 * (3 - colorShift));
+            }
+            const rgbColor = `rgb(${r}, ${g}, ${b})`;
+            ctx.fillStyle = rgbColor;
+            ctx.shadowColor = rgbColor;
+            ctx.shadowBlur = 30 * pulse;
+            ctx.globalAlpha = pulse;
+          } else if (cosmetics.nameStyle === 'name_fire') {
+            // Fire gradient text with flicker
+            const flicker = 0.85 + Math.random() * 0.15;
+            const gradient = ctx.createLinearGradient(head.x, head.y + headRadius + 10, head.x, head.y + headRadius + 25);
+            gradient.addColorStop(0, '#FFD700');
+            gradient.addColorStop(0.5, '#FF4500');
+            gradient.addColorStop(1, '#FF0000');
+            ctx.fillStyle = gradient;
+            ctx.shadowColor = '#FF4500';
+            ctx.shadowBlur = 15;
+            ctx.globalAlpha = flicker;
+          } else if (cosmetics.nameStyle === 'name_ice') {
+            // Icy blue text with outline
+            ctx.fillStyle = '#87CEEB';
+            ctx.shadowColor = '#E0FFFF';
+            ctx.shadowBlur = 12;
+            ctx.strokeStyle = '#4682B4';
+            ctx.lineWidth = 2 / camera.zoom;
+            ctx.strokeText(player.name, head.x, head.y + headRadius + 20 / camera.zoom);
           } else {
             // Default white
             ctx.fillStyle = '#fff';
+            ctx.shadowColor = '#000';
+            ctx.shadowBlur = 3;
           }
           
-          ctx.font = `${Math.max(12, 14 / camera.zoom)}px Arial`;
-          ctx.textAlign = 'center';
           ctx.fillText(player.name, head.x, head.y + headRadius + 20 / camera.zoom);
-          ctx.shadowBlur = 0; // Reset shadow
+          ctx.restore();
         }
       });
 
@@ -1221,7 +1602,23 @@ export default function GamePage() {
         if (firstPlace && firstPlace.segments.length > 0) {
           const head = firstPlace.segments[0];
           const headRadius = 15;
-          const crownY = head.y - headRadius - 15;
+          const cosmetics = firstPlace.equippedCosmetics || {};
+          
+          // Calculate crown offset based on equipped head item
+          let crownOffset = 15;
+          if (cosmetics.headItem === 'head_party_hat') {
+            crownOffset = 26;
+          } else if (cosmetics.headItem === 'head_halo') {
+            crownOffset = 28;
+          } else if (cosmetics.headItem === 'head_crown') {
+            crownOffset = 35;
+          } else if (cosmetics.headItem === 'head_devil_horns') {
+            crownOffset = 30;
+          } else if (cosmetics.headItem === 'head_sunglasses') {
+            crownOffset = 15;
+          }
+          
+          const crownY = head.y - headRadius - crownOffset;
           
           // Draw simple crown (rotated 180 degrees - points up now)
           ctx.fillStyle = '#FFD700';
@@ -1244,70 +1641,53 @@ export default function GamePage() {
         }
       }
 
-      // Draw apple (free or held)
-      if (apple) {
-        const APPLE_RADIUS_FREE = 12;
-        const APPLE_RADIUS_HELD = 8;
-        const APPLE_OFFSET = 14;
+      // Draw FREE present (not held) - CHRISTMAS THEME
+      if (apple && !apple.heldBy) {
+        const PRESENT_SIZE_FREE = 14;
+        const presentX = apple.x;
+        const presentY = apple.y;
+        const presentSize = PRESENT_SIZE_FREE;
         
-        let appleX = apple.x;
-        let appleY = apple.y;
-        let appleRadius = APPLE_RADIUS_FREE;
-        let isHeld = false;
+        // Floating animation
+        const floatOffset = Math.sin(now / 1000) * 3;
+        const finalY = presentY + floatOffset;
         
-        // If apple is held, position it in front of holder's head
-        if (apple.heldBy) {
-          const holder = sortedSnakes.find(s => s.playerId === apple.heldBy);
-          if (holder && holder.segments.length > 0) {
-            const head = holder.segments[0];
-            const angle = holder.angle || 0;
-            appleX = head.x + Math.cos(angle) * APPLE_OFFSET;
-            appleY = head.y + Math.sin(angle) * APPLE_OFFSET;
-            appleRadius = APPLE_RADIUS_HELD;
-            isHeld = true;
-          }
-        }
+        // Draw present box (red gift box)
+        const boxGradient = ctx.createLinearGradient(presentX - presentSize, finalY - presentSize, presentX + presentSize, finalY + presentSize);
+        boxGradient.addColorStop(0, '#DC143C');
+        boxGradient.addColorStop(1, '#8B0000');
+        ctx.fillStyle = boxGradient;
+        ctx.fillRect(presentX - presentSize, finalY - presentSize, presentSize * 2, presentSize * 2);
         
-        // Draw apple body (red circle with gradient)
-        const gradient = ctx.createRadialGradient(appleX - 3, appleY - 3, 2, appleX, appleY, appleRadius);
-        gradient.addColorStop(0, '#FF6B6B');
-        gradient.addColorStop(1, '#CC0000');
-        ctx.fillStyle = gradient;
+        // Draw present ribbon (gold horizontal)
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(presentX - presentSize, finalY - presentSize * 0.2, presentSize * 2, presentSize * 0.4);
+        
+        // Draw present ribbon (gold vertical)
+        ctx.fillRect(presentX - presentSize * 0.2, finalY - presentSize, presentSize * 0.4, presentSize * 2);
+        
+        // Draw bow on top
+        ctx.fillStyle = '#FFD700';
         ctx.beginPath();
-        ctx.arc(appleX, appleY, appleRadius, 0, Math.PI * 2);
+        ctx.ellipse(presentX - presentSize * 0.5, finalY - presentSize * 1.2, presentSize * 0.4, presentSize * 0.3, -Math.PI / 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(presentX + presentSize * 0.5, finalY - presentSize * 1.2, presentSize * 0.4, presentSize * 0.3, Math.PI / 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(presentX, finalY - presentSize * 1.1, presentSize * 0.25, 0, Math.PI * 2);
         ctx.fill();
         
-        // Add glow for free apples
-        if (!isHeld) {
-          const pulseIntensity = 0.5 + 0.5 * Math.sin(now / 500);
-          ctx.save();
-          ctx.shadowColor = '#FFD700';
-          ctx.shadowBlur = 20 * pulseIntensity;
-          ctx.globalAlpha = 0.8;
-          ctx.strokeStyle = '#FFD700';
-          ctx.lineWidth = 2 / camera.zoom;
-          ctx.beginPath();
-          ctx.arc(appleX, appleY, appleRadius + 2, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-          
-          // Floating animation (bob up and down)
-          appleY += Math.sin(now / 1000) * 3;
-        }
-        
-        // Draw small stem
-        ctx.strokeStyle = '#8B4513';
+        // Add glow
+        const pulseIntensity = 0.5 + 0.5 * Math.sin(now / 500);
+        ctx.save();
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur = 20 * pulseIntensity;
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = '#FFD700';
         ctx.lineWidth = 2 / camera.zoom;
-        ctx.beginPath();
-        ctx.moveTo(appleX, appleY - appleRadius);
-        ctx.lineTo(appleX + 2, appleY - appleRadius - 4);
-        ctx.stroke();
-        
-        // Draw small leaf
-        ctx.fillStyle = '#228B22';
-        ctx.beginPath();
-        ctx.ellipse(appleX + 3, appleY - appleRadius - 3, 3, 2, Math.PI / 4, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.strokeRect(presentX - presentSize - 2, finalY - presentSize - 2, presentSize * 2 + 4, presentSize * 2 + 4);
+        ctx.restore();
       }
 
       ctx.restore();
@@ -1549,9 +1929,9 @@ export default function GamePage() {
               className="bg-gradient-to-r from-red-900/80 to-orange-900/80 border-2 border-yellow-400 rounded-xl p-4 mb-6"
             >
               <div className="flex items-center justify-center gap-3">
-                <span className="text-4xl">🍎</span>
+                <span className="text-4xl">🎁</span>
                 <div>
-                  <div className="text-2xl font-black text-yellow-400">+1 Apple Earned!</div>
+                  <div className="text-2xl font-black text-yellow-400">+1 Present Earned!</div>
                   <div className="text-sm text-yellow-200">Collected from the arena</div>
                 </div>
               </div>

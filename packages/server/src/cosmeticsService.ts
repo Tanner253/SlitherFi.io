@@ -157,8 +157,6 @@ export class CosmeticsService {
       user.equippedCosmetics[slot] = cosmeticId;
       await user.save();
 
-      console.log(`✨ ${user.username} equipped ${cosmetic.name} to ${slot}`);
-
       return {
         success: true,
         equippedCosmetics: user.equippedCosmetics,
@@ -184,16 +182,28 @@ export class CosmeticsService {
         return { success: false, error: 'user_not_found' };
       }
 
-      // Unequip cosmetic from slot
-      if (user.equippedCosmetics && user.equippedCosmetics[slot]) {
-        delete user.equippedCosmetics[slot];
-        await user.save();
-        console.log(`✨ ${user.username} unequipped cosmetic from ${slot}`);
+      // Initialize equippedCosmetics if it doesn't exist
+      if (!user.equippedCosmetics) {
+        user.equippedCosmetics = {};
       }
+
+      // Unequip cosmetic from slot by setting it to null/undefined
+      if (user.equippedCosmetics[slot]) {
+        // Use markModified to ensure Mongoose tracks the change
+        user.equippedCosmetics[slot] = undefined;
+        user.markModified('equippedCosmetics');
+        await user.save();
+      }
+
+      // Clean the object for return (remove undefined values)
+      const cleanedCosmetics: any = {};
+      if (user.equippedCosmetics.trail) cleanedCosmetics.trail = user.equippedCosmetics.trail;
+      if (user.equippedCosmetics.headItem) cleanedCosmetics.headItem = user.equippedCosmetics.headItem;
+      if (user.equippedCosmetics.nameStyle) cleanedCosmetics.nameStyle = user.equippedCosmetics.nameStyle;
 
       return {
         success: true,
-        equippedCosmetics: user.equippedCosmetics || {},
+        equippedCosmetics: cleanedCosmetics,
       };
     } catch (error) {
       console.error('❌ Failed to unequip cosmetic:', error);
