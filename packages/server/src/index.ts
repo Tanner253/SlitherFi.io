@@ -695,6 +695,114 @@ app.get('/api/chat', async (req: any, res: any) => {
   }
 });
 
+// API endpoint to get all cosmetics
+app.get('/api/cosmetics', async (req: any, res: any) => {
+  try {
+    const cosmetics = cosmeticsService.getCosmetics();
+    res.json(cosmetics);
+  } catch (error) {
+    console.error('Error fetching cosmetics:', error);
+    res.status(500).json({ error: 'Failed to fetch cosmetics' });
+  }
+});
+
+// API endpoint to get user's cosmetics data (unlocked items, equipped items, balance)
+app.get('/api/user/:wallet/cosmetics', async (req: any, res: any) => {
+  try {
+    const { wallet } = req.params;
+    if (!wallet) {
+      return res.status(400).json({ success: false, error: 'wallet_required' });
+    }
+    
+    const result = await cosmeticsService.getUserCosmetics(wallet);
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching user cosmetics:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch user cosmetics' });
+  }
+});
+
+// API endpoint to purchase cosmetic
+app.post('/api/cosmetics/purchase', async (req: any, res: any) => {
+  try {
+    const { walletAddress, cosmeticId } = req.body;
+    
+    if (!walletAddress || !cosmeticId) {
+      return res.status(400).json({ success: false, error: 'invalid_request' });
+    }
+    
+    const result = await cosmeticsService.purchaseCosmetic(walletAddress, cosmeticId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error purchasing cosmetic:', error);
+    res.status(500).json({ success: false, error: 'server_error' });
+  }
+});
+
+// API endpoint to equip cosmetic
+app.post('/api/cosmetics/equip', async (req: any, res: any) => {
+  try {
+    const { walletAddress, cosmeticId, slot } = req.body;
+    
+    if (!walletAddress || !cosmeticId || !slot) {
+      return res.status(400).json({ success: false, error: 'invalid_request' });
+    }
+    
+    const result = await cosmeticsService.equipCosmetic(walletAddress, cosmeticId, slot);
+    
+    // Broadcast cosmetic update to lobby/game if successful (real-time update for other players)
+    if (result.success) {
+      const playerId = Array.from(playerWallets.entries()).find(([_, wallet]) => wallet === walletAddress)?.[0];
+      if (playerId) {
+        const lobbyId = playerToLobby.get(playerId);
+        if (lobbyId) {
+          io.to(lobbyId).emit('cosmeticsUpdated', {
+            playerId,
+            equippedCosmetics: result.equippedCosmetics,
+          });
+        }
+      }
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Error equipping cosmetic:', error);
+    res.status(500).json({ success: false, error: 'server_error' });
+  }
+});
+
+// API endpoint to unequip cosmetic
+app.post('/api/cosmetics/unequip', async (req: any, res: any) => {
+  try {
+    const { walletAddress, slot } = req.body;
+    
+    if (!walletAddress || !slot) {
+      return res.status(400).json({ success: false, error: 'invalid_request' });
+    }
+    
+    const result = await cosmeticsService.unequipCosmetic(walletAddress, slot);
+    
+    // Broadcast cosmetic update to lobby/game if successful (real-time update for other players)
+    if (result.success) {
+      const playerId = Array.from(playerWallets.entries()).find(([_, wallet]) => wallet === walletAddress)?.[0];
+      if (playerId) {
+        const lobbyId = playerToLobby.get(playerId);
+        if (lobbyId) {
+          io.to(lobbyId).emit('cosmeticsUpdated', {
+            playerId,
+            equippedCosmetics: result.equippedCosmetics,
+          });
+        }
+      }
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Error unequipping cosmetic:', error);
+    res.status(500).json({ success: false, error: 'server_error' });
+  }
+});
+
 /**
  * x403 Session Logout
  * Invalidate session when user disconnects wallet

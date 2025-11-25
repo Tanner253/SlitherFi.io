@@ -57,7 +57,7 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
     }
   }, [isOpen, walletAddress]);
 
-  const fetchAllCosmetics = async (retryCount = 0) => {
+  const fetchAllCosmetics = async () => {
     if (cosmeticsLoading) return; // Prevent duplicate requests
     
     setCosmeticsLoading(true);
@@ -65,63 +65,22 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
     
     try {
       const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
-      console.log('🔌 Fetching cosmetics from:', serverUrl);
+      console.log('📦 Fetching cosmetics from:', `${serverUrl}/api/cosmetics`);
       
-      // Use a temporary socket just to fetch cosmetics
-      const { io } = await import('socket.io-client');
-      const socket = io(serverUrl, {
-        transports: ['websocket', 'polling'], // Try both transports
-        reconnection: false, // Don't auto-reconnect for this temp connection
-      });
+      const response = await fetch(`${serverUrl}/api/cosmetics`);
       
-      let resolved = false;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       
-      socket.on('connect', () => {
-        console.log('✅ ProfileModal connected to server');
-        socket.emit('getCosmetics');
-      });
+      const data = await response.json();
+      console.log('✅ ProfileModal received cosmetics:', data);
       
-      socket.on('connect_error', (error: any) => {
-        console.error('❌ ProfileModal socket connection error:', error);
-        if (!resolved) {
-          resolved = true;
-          socket.disconnect();
-          setCosmeticsLoading(false);
-          setCosmeticsError(true);
-        }
-      });
-      
-      socket.on('cosmeticsData', (data: any) => {
-        if (resolved) return; // Already handled
-        resolved = true;
-        
-        console.log('📦 ProfileModal received cosmetics:', data);
-        setAllCosmetics(data);
-        setCosmeticsLoading(false);
-        setCosmeticsError(false);
-        socket.disconnect();
-      });
-      
-      // Timeout with retry
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          console.warn('⚠️ Cosmetics fetch timeout');
-          socket.disconnect();
-          
-          // Retry up to 2 times
-          if (retryCount < 2) {
-            console.log(`🔄 Retrying... (attempt ${retryCount + 1})`);
-            setTimeout(() => fetchAllCosmetics(retryCount + 1), 1000);
-          } else {
-            console.error('❌ Failed to fetch cosmetics after retries');
-            setCosmeticsLoading(false);
-            setCosmeticsError(true);
-          }
-        }
-      }, 5000);
+      setAllCosmetics(data);
+      setCosmeticsLoading(false);
+      setCosmeticsError(false);
     } catch (error) {
-      console.error('❌ Failed to fetch all cosmetics:', error);
+      console.error('❌ Failed to fetch cosmetics:', error);
       setCosmeticsLoading(false);
       setCosmeticsError(true);
     }
@@ -132,42 +91,35 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
 
     try {
       const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
-      const { io } = await import('socket.io-client');
-      const socket = io(serverUrl);
-
-      // Wait for connection before emitting
-      socket.on('connect', () => {
-        console.log('🔌 Connected to server for equip');
-        socket.emit('equipCosmetic', { walletAddress, cosmeticId, slot });
-      });
-
-      socket.on('equipResult', (result: any) => {
-        console.log('📦 Equip result received:', result);
-        if (result.success) {
-          setEquippedCosmetics(result.equippedCosmetics);
-          
-          // Also update profile state
-          if (profile) {
-            setProfile({
-              ...profile,
-              equippedCosmetics: result.equippedCosmetics
-            });
-          }
-          
-          setSelectedSlot(null);
-          console.log('✅ Cosmetic equipped successfully');
-        } else {
-          console.error('❌ Failed to equip:', result.error);
-        }
-        socket.disconnect();
+      console.log('📦 Equipping cosmetic via API:', { cosmeticId, slot });
+      
+      const response = await fetch(`${serverUrl}/api/cosmetics/equip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress, cosmeticId, slot })
       });
       
-      // Timeout safety
-      setTimeout(() => {
-        socket.disconnect();
-      }, 5000);
+      const result = await response.json();
+      console.log('📦 Equip result received:', result);
+      
+      if (result.success) {
+        setEquippedCosmetics(result.equippedCosmetics);
+        
+        // Also update profile state
+        if (profile) {
+          setProfile({
+            ...profile,
+            equippedCosmetics: result.equippedCosmetics
+          });
+        }
+        
+        setSelectedSlot(null);
+        console.log('✅ Cosmetic equipped successfully');
+      } else {
+        console.error('❌ Failed to equip:', result.error);
+      }
     } catch (error) {
-      console.error('Failed to equip cosmetic:', error);
+      console.error('❌ Failed to equip cosmetic:', error);
     }
   };
 
@@ -176,47 +128,37 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
 
     try {
       const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
-      const { io } = await import('socket.io-client');
-      const socket = io(serverUrl);
-
-      // Wait for connection before emitting
-      socket.on('connect', () => {
-        console.log('🔌 Connected to server for unequip');
-        socket.emit('unequipCosmetic', { walletAddress, slot });
-      });
-
-      socket.on('unequipResult', (result: any) => {
-        console.log('📦 Unequip result received:', result);
-        if (result.success) {
-          // IMPORTANT: Create a new object without the unequipped slot
-          const newEquipped = { ...equippedCosmetics };
-          delete newEquipped[slot]; // Remove the slot
-          
-          console.log('✅ Updating equipped cosmetics to:', newEquipped);
-          console.log('   Removed slot:', slot);
-          
-          setEquippedCosmetics(newEquipped);
-          
-          // Force re-render by also updating profile if it exists
-          if (profile) {
-            setProfile({
-              ...profile,
-              equippedCosmetics: newEquipped
-            });
-          }
-          
-          // Disconnect after state update
-          setTimeout(() => socket.disconnect(), 100);
-        } else {
-          console.error('❌ Failed to unequip:', result.error);
-          socket.disconnect();
-        }
+      console.log('📦 Unequipping cosmetic via API:', { slot });
+      
+      const response = await fetch(`${serverUrl}/api/cosmetics/unequip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress, slot })
       });
       
-      // Timeout safety
-      setTimeout(() => {
-        socket.disconnect();
-      }, 5000);
+      const result = await response.json();
+      console.log('📦 Unequip result received:', result);
+      
+      if (result.success) {
+        // IMPORTANT: Create a new object without the unequipped slot
+        const newEquipped = { ...equippedCosmetics };
+        delete newEquipped[slot]; // Remove the slot
+        
+        console.log('✅ Updating equipped cosmetics to:', newEquipped);
+        console.log('   Removed slot:', slot);
+        
+        setEquippedCosmetics(newEquipped);
+        
+        // Force re-render by also updating profile if it exists
+        if (profile) {
+          setProfile({
+            ...profile,
+            equippedCosmetics: newEquipped
+          });
+        }
+      } else {
+        console.error('❌ Failed to unequip:', result.error);
+      }
     } catch (error) {
       console.error('❌ Failed to unequip cosmetic:', error);
     }
@@ -526,7 +468,7 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                     <div className="text-center mt-2">
                       <div className="text-xs text-red-400 mb-1">Failed to load cosmetics</div>
                       <button
-                        onClick={() => fetchAllCosmetics(0)}
+                        onClick={() => fetchAllCosmetics()}
                         className="text-xs text-green-400 hover:text-green-300 underline"
                       >
                         Retry

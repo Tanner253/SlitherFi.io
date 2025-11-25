@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { io, Socket } from 'socket.io-client';
 import { SnakePreview } from '../components/SnakePreview';
 import SnowEffect from '../components/SnowEffect';
 
@@ -34,9 +33,7 @@ export default function StorePage() {
   const [selectedCosmetic, setSelectedCosmetic] = useState<CosmeticItem | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [toastMessage, setToastMessage] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  const [purchasingCosmeticName, setPurchasingCosmeticName] = useState<string>('');
 
   useEffect(() => {
     if (!walletAddress) {
@@ -44,58 +41,36 @@ export default function StorePage() {
       return;
     }
 
-    // Connect to socket
-    const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
-    const newSocket = io(serverUrl);
-    setSocket(newSocket);
-
-    newSocket.on('connect', () => {
-      console.log('✅ Store connected to server');
-      
-      // Fetch cosmetics data
-      newSocket.emit('getCosmetics');
-      
-      // Fetch user cosmetics
-      newSocket.emit('getUserCosmetics', { walletAddress });
-    });
-
-    newSocket.on('cosmeticsData', (data: CosmeticsData) => {
-      console.log('📦 Received cosmetics data:', data);
-      setCosmetics(data);
-      setLoading(false);
-    });
-
-    newSocket.on('userCosmeticsData', (data: any) => {
-      console.log('👤 Received user cosmetics data:', data);
-      if (data.success) {
-        setAppleBalance(data.appleBalance || 0);
-        setUnlockedCosmetics(data.unlockedCosmetics || []);
-      }
-    });
-
-    // Handle purchase result
-    newSocket.on('purchaseResult', (result: any) => {
-      console.log('🎁 Purchase result:', result);
-      setPurchasing(false);
-      if (result.success) {
-        setAppleBalance(result.newBalance);
-        setUnlockedCosmetics(result.unlockedCosmetics);
-        const purchasedName = purchasingCosmeticName || 'Cosmetic';
-        setSelectedCosmetic(null);
-        setPurchasingCosmeticName('');
-        setToastMessage({ message: `✅ ${purchasedName} unlocked! Go to your Profile to equip it.`, type: 'success' });
-      } else {
-        const errorMsg = result.error === 'insufficient_balance' ? 'Not enough presents!' :
-                         result.error === 'already_owned' ? 'You already own this!' :
-                         'Purchase failed. Try again.';
-        setToastMessage({ message: `❌ ${errorMsg}`, type: 'error' });
-      }
-    });
-
-    return () => {
-      newSocket.disconnect();
-    };
+    fetchStoreData();
   }, [walletAddress, router]);
+
+  const fetchStoreData = async () => {
+    const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+    
+    try {
+      // Fetch all cosmetics
+      const cosmeticsRes = await fetch(`${serverUrl}/api/cosmetics`);
+      const cosmeticsData = await cosmeticsRes.json();
+      console.log('📦 Received cosmetics data:', cosmeticsData);
+      setCosmetics(cosmeticsData);
+      
+      // Fetch user's cosmetics data
+      const userCosmeticsRes = await fetch(`${serverUrl}/api/user/${walletAddress}/cosmetics`);
+      const userCosmeticsData = await userCosmeticsRes.json();
+      console.log('👤 Received user cosmetics data:', userCosmeticsData);
+      
+      if (userCosmeticsData.success) {
+        setAppleBalance(userCosmeticsData.appleBalance || 0);
+        setUnlockedCosmetics(userCosmeticsData.unlockedCosmetics || []);
+      }
+      
+      setLoading(false);
+    } catch (error) {
+      console.error('Failed to fetch store data:', error);
+      setLoading(false);
+      setToastMessage({ message: '❌ Failed to load store data', type: 'error' });
+    }
+  };
 
   // Auto-dismiss toast after 4 seconds
   useEffect(() => {
@@ -107,16 +82,44 @@ export default function StorePage() {
     }
   }, [toastMessage]);
 
-  const handlePurchase = () => {
-    if (!selectedCosmetic || !walletAddress || !socket) return;
+  const handlePurchase = async () => {
+    if (!selectedCosmetic || !walletAddress) return;
     
     setPurchasing(true);
-    // Store cosmetic name before modal closes
-    setPurchasingCosmeticName(selectedCosmetic.name);
-    socket.emit('purchaseCosmetic', {
-      walletAddress,
-      cosmeticId: selectedCosmetic.id,
-    });
+    const cosmeticName = selectedCosmetic.name;
+    const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+    
+    try {
+      const response = await fetch(`${serverUrl}/api/cosmetics/purchase`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress,
+          cosmeticId: selectedCosmetic.id,
+        })
+      });
+      
+      const result = await response.json();
+      console.log('🎁 Purchase result:', result);
+      
+      setPurchasing(false);
+      
+      if (result.success) {
+        setAppleBalance(result.newBalance);
+        setUnlockedCosmetics(result.unlockedCosmetics);
+        setSelectedCosmetic(null);
+        setToastMessage({ message: `✅ ${cosmeticName} unlocked! Go to your Profile to equip it.`, type: 'success' });
+      } else {
+        const errorMsg = result.error === 'insufficient_balance' ? 'Not enough presents!' :
+                         result.error === 'already_owned' ? 'You already own this!' :
+                         'Purchase failed. Try again.';
+        setToastMessage({ message: `❌ ${errorMsg}`, type: 'error' });
+      }
+    } catch (error) {
+      console.error('Failed to purchase cosmetic:', error);
+      setPurchasing(false);
+      setToastMessage({ message: '❌ Purchase failed. Try again.', type: 'error' });
+    }
   };
 
   const getCosmeticIcon = (cosmetic: CosmeticItem) => {
