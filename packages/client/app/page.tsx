@@ -1054,19 +1054,19 @@ export default function HomePage() {
               className="mt-24 grid md:grid-cols-3 gap-8"
             >
               <div className="p-6 bg-green-900/20 border border-green-700/30 rounded-2xl backdrop-blur-sm">
-                <div className="text-5xl mb-4">⚡</div>
-                <h3 className="text-xl font-bold text-green-300 mb-2">Lightning Speed</h3>
-                <p className="text-emerald-400/70">60Hz precision gameplay. No lag. Pure skill.</p>
+                <div className="text-5xl mb-4">🔐</div>
+                <h3 className="text-xl font-bold text-green-300 mb-2">x402 & x403</h3>
+                <p className="text-emerald-400/70">Secure wallet auth & on-chain payment verification. Play trustlessly.</p>
                       </div>
               <div className="p-6 bg-green-900/20 border border-green-700/30 rounded-2xl backdrop-blur-sm">
-                <div className="text-5xl mb-4">🔐</div>
-                <h3 className="text-xl font-bold text-green-300 mb-2">Trustless & Fair</h3>
-                <p className="text-emerald-400/70">Solana-powered. Transparent. Provably honest.</p>
+                <div className="text-5xl mb-4">🎁</div>
+                <h3 className="text-xl font-bold text-green-300 mb-2">Free Cosmetics</h3>
+                <p className="text-emerald-400/70">Collect presents in-game. Unlock exclusive skins. Show off your style.</p>
                     </div>
               <div className="p-6 bg-green-900/20 border border-green-700/30 rounded-2xl backdrop-blur-sm">
-                <div className="text-5xl mb-4">💎</div>
-                <h3 className="text-xl font-bold text-green-300 mb-2">Real Treasures</h3>
-                <p className="text-emerald-400/70">Winner takes 80%. Instant USDC payouts.</p>
+                <div className="text-5xl mb-4">💰</div>
+                <h3 className="text-xl font-bold text-green-300 mb-2">Fair Fees</h3>
+                <p className="text-emerald-400/70">15% fee on paid games funds Dream Mode, marketing, and development. Dream Mode is 100% free.</p>
                     </div>
                   </motion.div>
           </motion.div>

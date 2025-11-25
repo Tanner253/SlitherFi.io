@@ -108,6 +108,7 @@ export default function GamePage() {
   const [isSpectating, setIsSpectating] = useState(false);
   const [spectatingPlayerId, setSpectatingPlayerId] = useState<string>('');
   const [spectatorCount, setSpectatorCount] = useState(0);
+  const hasAutoSelectedRef = useRef(false); // Track if we've done initial auto-select
   const [leaderboardVisible, setLeaderboardVisible] = useState(true);
   const [killAnimations, setKillAnimations] = useState<KillAnimation[]>([]);
   const [toastMessage, setToastMessage] = useState<{ message: string; type: 'info' | 'error' | 'success' | 'warning' } | null>(null);
@@ -125,8 +126,8 @@ export default function GamePage() {
   const [chatInput, setChatInput] = useState('');
   const [currentUsername, setCurrentUsername] = useState('');
   const [isBoosting, setIsBoosting] = useState(false);
-
-  // Snow particles for falling snow effect
+  
+  // Snow particles for falling snow effect (CHRISTMAS THEME)
   const snowParticlesRef = useRef<Array<{ x: number; y: number; speed: number; drift: number; size: number }>>([]);
 
   // Contract Address
@@ -154,10 +155,7 @@ export default function GamePage() {
     const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
     
     // Load username
-    const spectateMode = localStorage.getItem('spectateMode');
-    const isSpectator = spectateMode === 'true';
-    
-    if (!isSpectator && walletAddress) {
+    if (walletAddress) {
       fetch(`${serverUrl}/api/user/${walletAddress}`)
         .then(res => res.json())
         .then(data => {
@@ -171,7 +169,7 @@ export default function GamePage() {
           setUsernameLoaded(true); // Proceed even on error
         });
     } else {
-      setUsernameLoaded(true); // Spectator or no wallet, don't need username
+      setUsernameLoaded(true); // No wallet, assume spectator or no name
     }
     
     // Load chat history
@@ -265,29 +263,11 @@ export default function GamePage() {
     } else {
       // Joining as player
       console.log('🎮 PLAYER MODE - playerId:', playerId);
-      console.log('   PlayerName:', playerName);
-      console.log('   Tier:', tier);
-      console.log('   UsernameLoaded:', usernameLoaded);
-      
-      if (!playerId || !tier) {
-        console.error('❌ Missing playerId or tier, redirecting');
+      if (!playerId || !playerName || !tier) {
+        console.error('❌ Missing player credentials, redirecting');
         router.push('/');
         return;
       }
-      
-      // If username not loaded yet, let it load (we returned early above)
-      if (!playerName && !usernameLoaded) {
-        console.log('⏳ Waiting for username to load...');
-        return;
-      }
-      
-      // If we got here and still no playerName, use a default or redirect
-      if (!playerName) {
-        console.error('❌ Username failed to load, redirecting');
-        router.push('/?error=Please set your username first');
-        return;
-      }
-      
       setMyPlayerId(playerId);
       playerIdRef.current = playerId;
     }
@@ -366,11 +346,11 @@ export default function GamePage() {
     });
 
     socket.on('refundProcessed', ({ amount, tx }) => {
-      setToastMessage({ message: `✅ Refund processed: $${amount} USDC sent back to your wallet`, type: 'success' });
+      alert(`✅ Refund processed: $${amount} USDC sent back to your wallet`);
     });
 
     socket.on('refundFailed', ({ error }) => {
-      setToastMessage({ message: `⚠️ Refund failed: ${error}. Please contact support.`, type: 'error' });
+      alert(`⚠️ Refund failed: ${error}. Please contact support.`);
     });
 
     // Listen for payout transaction signature from server
@@ -456,7 +436,7 @@ export default function GamePage() {
       console.log(`💀 YOU DIED!`);
       
       setIsSpectating(true);
-      // Don't set spectatingPlayerId here - let auto-select choose leader
+      // Don't set spectatingPlayerId - user will manually select
       setBoundaryWarning(null);
       playerIdRef.current = '';
       
@@ -467,7 +447,7 @@ export default function GamePage() {
         });
       }
       
-      console.log('✅ Spectator mode active');
+      console.log('✅ Spectator mode active - awaiting manual player selection');
     });
 
     // Player elimination broadcast (for all players to see)
@@ -543,35 +523,33 @@ export default function GamePage() {
       if (!isSpectating && playerId) {
         const mySnake = newSnakes.find((s: Snake) => s.playerId === playerId);
         if (!mySnake || mySnake.segments.length === 0 && gameStartedRef.current) {
-          // Player died but didn't get elimination event - spectate leader
+          // Player died - become spectator (don't auto-select anyone)
           setIsSpectating(true);
-          if (newLeaderboard.length > 0) {
-            setSpectatingPlayerId(newLeaderboard[0].id);
-          }
+          console.log('💀 Player died, now spectating (no auto-select)');
         }
       }
 
-      // ONLY auto-select if we don't have anyone selected
-      if (isSpectating && !spectatingPlayerId && newLeaderboard.length > 0) {
-        const leader = newLeaderboard[0];
-        console.log('👁️ AUTO-SELECTING leader:', leader.name, leader.id);
-        setSpectatingPlayerId(leader.id);
+      // Auto-select ONLY ONCE on initial join
+      if (isSpectating && !spectatingPlayerId && !hasAutoSelectedRef.current && newLeaderboard.length > 0) {
+        // Select the first alive player (not necessarily first place)
+        const firstAlive = newLeaderboard.find((p: LeaderboardEntry) => p.length > 0);
+        if (firstAlive) {
+          console.log(`🎥 Initial spectator selection (ONE TIME): ${firstAlive.name} (${firstAlive.id})`);
+          setSpectatingPlayerId(firstAlive.id);
+          hasAutoSelectedRef.current = true; // Mark that we've done the auto-select
+        }
       }
 
-      // Check if current spectated player is still alive
+      // If spectated player is dead, CLEAR selection but DON'T auto-select anyone
       if (isSpectating && spectatingPlayerId) {
         const current = newLeaderboard.find((p: LeaderboardEntry) => p.id === spectatingPlayerId);
         const currentSnake = newSnakes.find((s: Snake) => s.playerId === spectatingPlayerId);
         
-        console.log(`📊 Current spectate: ${spectatingPlayerId}, Found in leaderboard: ${!!current}, Has snake: ${!!currentSnake}`);
-        
-        // ONLY auto-switch if player is confirmed dead
-        if (!current || current.length === 0 || !currentSnake) {
-          const alivePlayers = newLeaderboard.filter((p: LeaderboardEntry) => p.length > 0);
-          if (alivePlayers.length > 0) {
-            console.log(`⚠️ ${spectatingPlayerId} is DEAD, switching to ${alivePlayers[0].name}`);
-            setSpectatingPlayerId(alivePlayers[0].id);
-          }
+        // If spectated player died or left, CLEAR selection (user must manually choose next)
+        if (!current || current.length === 0 || !currentSnake || currentSnake.segments.length === 0) {
+          console.log(`🎥 Spectated player ${spectatingPlayerId} died/left - clearing selection (USE ARROWS TO SELECT NEXT)`);
+          setSpectatingPlayerId('');
+          // DON'T reset hasAutoSelectedRef - we only auto-select on FIRST join, not after deaths
         }
       }
 
@@ -688,7 +666,7 @@ export default function GamePage() {
       
       socket.disconnect();
     };
-  }, [router, usernameLoaded]); // Removed currentUsername to prevent re-runs
+  }, [router, usernameLoaded, currentUsername]);
 
   // Auto-dismiss toast after 3 seconds
   useEffect(() => {
@@ -1015,11 +993,11 @@ export default function GamePage() {
         ctx.strokeRect(mapBounds.minX, mapBounds.minY, mapBounds.maxX - mapBounds.minX, mapBounds.maxY - mapBounds.minY);
       }
 
-      // Draw pellets as white diamonds (snow on ground)
+      // Draw pellets as white diamonds (CHRISTMAS SNOW)
       pellets.forEach(pellet => {
         const pelletSize = 3;
         
-        ctx.fillStyle = '#FFFFFF'; // White snow
+        ctx.fillStyle = '#FFFFFF'; // White snow on ground
         ctx.beginPath();
         ctx.moveTo(pellet.x, pellet.y - pelletSize); // Top
         ctx.lineTo(pellet.x + pelletSize, pellet.y); // Right
@@ -1036,11 +1014,10 @@ export default function GamePage() {
 
       const now = Date.now();
       
-      // Initialize and update snow particles (falling snow effect)
+      // Falling snow particles (CHRISTMAS THEME)
       const gameProgress = timeRemaining !== null ? Math.max(0, 1 - (timeRemaining / 300)) : 0.3;
-      const targetSnowCount = Math.floor(150 + (gameProgress * 150)); // 150 to 300 particles
+      const targetSnowCount = Math.floor(150 + (gameProgress * 150));
       
-      // Add new snow particles if needed
       while (snowParticlesRef.current.length < targetSnowCount) {
         snowParticlesRef.current.push({
           x: Math.random() * 5000,
@@ -1051,12 +1028,10 @@ export default function GamePage() {
         });
       }
       
-      // Remove excess particles
       if (snowParticlesRef.current.length > targetSnowCount) {
         snowParticlesRef.current = snowParticlesRef.current.slice(0, targetSnowCount);
       }
       
-      // Update and draw snow particles
       snowParticlesRef.current.forEach(particle => {
         particle.y += particle.speed;
         particle.x += particle.drift;
@@ -1074,6 +1049,43 @@ export default function GamePage() {
         ctx.lineWidth = 0.5 / camera.zoom;
         ctx.stroke();
       });
+      
+      // Draw FREE present before snakes (CHRISTMAS THEME)
+      if (apple && !apple.heldBy) {
+        const PRESENT_SIZE_FREE = 14;
+        const floatOffset = Math.sin(now / 1000) * 3;
+        const finalY = apple.y + floatOffset;
+        
+        const boxGradient = ctx.createLinearGradient(apple.x - PRESENT_SIZE_FREE, finalY - PRESENT_SIZE_FREE, apple.x + PRESENT_SIZE_FREE, finalY + PRESENT_SIZE_FREE);
+        boxGradient.addColorStop(0, '#DC143C');
+        boxGradient.addColorStop(1, '#8B0000');
+        ctx.fillStyle = boxGradient;
+        ctx.fillRect(apple.x - PRESENT_SIZE_FREE, finalY - PRESENT_SIZE_FREE, PRESENT_SIZE_FREE * 2, PRESENT_SIZE_FREE * 2);
+        
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(apple.x - PRESENT_SIZE_FREE, finalY - PRESENT_SIZE_FREE * 0.2, PRESENT_SIZE_FREE * 2, PRESENT_SIZE_FREE * 0.4);
+        ctx.fillRect(apple.x - PRESENT_SIZE_FREE * 0.2, finalY - PRESENT_SIZE_FREE, PRESENT_SIZE_FREE * 0.4, PRESENT_SIZE_FREE * 2);
+        
+        ctx.beginPath();
+        ctx.ellipse(apple.x - PRESENT_SIZE_FREE * 0.5, finalY - PRESENT_SIZE_FREE * 1.2, PRESENT_SIZE_FREE * 0.4, PRESENT_SIZE_FREE * 0.3, -Math.PI / 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(apple.x + PRESENT_SIZE_FREE * 0.5, finalY - PRESENT_SIZE_FREE * 1.2, PRESENT_SIZE_FREE * 0.4, PRESENT_SIZE_FREE * 0.3, Math.PI / 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(apple.x, finalY - PRESENT_SIZE_FREE * 1.1, PRESENT_SIZE_FREE * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+        
+        const pulseIntensity = 0.5 + 0.5 * Math.sin(now / 500);
+        ctx.save();
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur = 20 * pulseIntensity;
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 2 / camera.zoom;
+        ctx.strokeRect(apple.x - PRESENT_SIZE_FREE - 2, finalY - PRESENT_SIZE_FREE - 2, PRESENT_SIZE_FREE * 2 + 4, PRESENT_SIZE_FREE * 2 + 4);
+        ctx.restore();
+      }
       
       // Filter animations locally - don't call setState in render loop!
       const activeKillAnimations = killAnimations.filter(a => now - a.startTime < 400);
@@ -1094,12 +1106,11 @@ export default function GamePage() {
         // Check for kill animation (sun rays + glow)
         const killAnim = activeKillAnimations.find(a => a.blobId === snake.id);
         
-        // Draw trail cosmetic (if equipped) - ALL TRAILS IMPLEMENTED
+        // Draw trail cosmetics - ALL 5 TRAILS
         const cosmetics = snake.equippedCosmetics || {};
         const trailLength = Math.min(snake.segments.length, 15);
         
         if (cosmetics.trail === 'trail_basic_glow') {
-          // Simple glow trail
           for (let i = 1; i < trailLength; i++) {
             const seg = snake.segments[i];
             const alpha = 1 - (i / trailLength);
@@ -1114,7 +1125,6 @@ export default function GamePage() {
             ctx.restore();
           }
         } else if (cosmetics.trail === 'trail_rainbow') {
-          // Rainbow trail with animated cycling colors
           const rainbowColors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
           for (let i = 1; i < trailLength; i++) {
             const seg = snake.segments[i];
@@ -1131,7 +1141,6 @@ export default function GamePage() {
             ctx.restore();
           }
         } else if (cosmetics.trail === 'trail_fire') {
-          // Fire trail with flickering
           const fireColors = ['#FF4500', '#FF6347', '#FFD700', '#FF8C00'];
           for (let i = 1; i < trailLength; i++) {
             const seg = snake.segments[i];
@@ -1149,7 +1158,6 @@ export default function GamePage() {
             ctx.restore();
           }
         } else if (cosmetics.trail === 'trail_lightning') {
-          // Lightning trail with sparks
           const lightningColors = ['#00F0FF', '#FFFFFF', '#4169E1'];
           for (let i = 1; i < trailLength; i++) {
             const seg = snake.segments[i];
@@ -1163,7 +1171,6 @@ export default function GamePage() {
             ctx.beginPath();
             ctx.arc(seg.x, seg.y, segmentRadius + 5, 0, Math.PI * 2);
             ctx.fill();
-            // Random spark effect
             if (Math.random() < 0.3) {
               ctx.strokeStyle = '#FFFFFF';
               ctx.lineWidth = 2 / camera.zoom;
@@ -1175,7 +1182,6 @@ export default function GamePage() {
             ctx.restore();
           }
         } else if (cosmetics.trail === 'trail_shadow') {
-          // Shadow/smoke trail
           const shadowColors = ['#2E003E', '#3D0066', '#1A001F'];
           for (let i = 1; i < trailLength; i++) {
             const seg = snake.segments[i];
@@ -1193,7 +1199,7 @@ export default function GamePage() {
           }
         }
 
-        // Determine candy cane pattern starting color (consistent per snake)
+        // Determine candy cane pattern (CHRISTMAS THEME)
         const startsWithRed = parseInt(snake.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0).toString()) % 2 === 0;
         
         // Draw body segments with candy cane pattern
@@ -1201,7 +1207,7 @@ export default function GamePage() {
           const seg = snake.segments[i];
           const radius = segmentRadius;
           
-          // Candy cane alternating pattern: red and white
+          // Candy cane alternating: red and white
           const isRedSegment = startsWithRed ? (i % 2 === 0) : (i % 2 === 1);
           ctx.fillStyle = isRedSegment ? '#DC143C' : '#FFFFFF';
           ctx.beginPath();
@@ -1216,7 +1222,7 @@ export default function GamePage() {
         
         // Draw head with candy cane color
         const head = snake.segments[0];
-        const isRedHead = startsWithRed ? true : false;
+        const isRedHead = startsWithRed;
         ctx.fillStyle = isRedHead ? '#DC143C' : '#FFFFFF';
         ctx.beginPath();
         ctx.arc(head.x, head.y, headRadius, 0, Math.PI * 2);
@@ -1226,34 +1232,32 @@ export default function GamePage() {
         ctx.lineWidth = 2 / camera.zoom;
         ctx.stroke();
         
-        // Draw HELD present (in mouth) before boost glow
+        // Draw HELD present before boost glow (CHRISTMAS THEME)
         if (apple && apple.heldBy === snake.playerId) {
           const angle = snake.angle || 0;
           const PRESENT_SIZE_HELD = 9;
           const PRESENT_OFFSET = 14;
           const presentX = head.x + Math.cos(angle) * PRESENT_OFFSET;
           const presentY = head.y + Math.sin(angle) * PRESENT_OFFSET;
-          const presentSize = PRESENT_SIZE_HELD;
           
-          const boxGradient = ctx.createLinearGradient(presentX - presentSize, presentY - presentSize, presentX + presentSize, presentY + presentSize);
+          const boxGradient = ctx.createLinearGradient(presentX - PRESENT_SIZE_HELD, presentY - PRESENT_SIZE_HELD, presentX + PRESENT_SIZE_HELD, presentY + PRESENT_SIZE_HELD);
           boxGradient.addColorStop(0, '#DC143C');
           boxGradient.addColorStop(1, '#8B0000');
           ctx.fillStyle = boxGradient;
-          ctx.fillRect(presentX - presentSize, presentY - presentSize, presentSize * 2, presentSize * 2);
+          ctx.fillRect(presentX - PRESENT_SIZE_HELD, presentY - PRESENT_SIZE_HELD, PRESENT_SIZE_HELD * 2, PRESENT_SIZE_HELD * 2);
           
           ctx.fillStyle = '#FFD700';
-          ctx.fillRect(presentX - presentSize, presentY - presentSize * 0.2, presentSize * 2, presentSize * 0.4);
-          ctx.fillRect(presentX - presentSize * 0.2, presentY - presentSize, presentSize * 0.4, presentSize * 2);
+          ctx.fillRect(presentX - PRESENT_SIZE_HELD, presentY - PRESENT_SIZE_HELD * 0.2, PRESENT_SIZE_HELD * 2, PRESENT_SIZE_HELD * 0.4);
+          ctx.fillRect(presentX - PRESENT_SIZE_HELD * 0.2, presentY - PRESENT_SIZE_HELD, PRESENT_SIZE_HELD * 0.4, PRESENT_SIZE_HELD * 2);
           
-          ctx.fillStyle = '#FFD700';
           ctx.beginPath();
-          ctx.ellipse(presentX - presentSize * 0.5, presentY - presentSize * 1.2, presentSize * 0.4, presentSize * 0.3, -Math.PI / 6, 0, Math.PI * 2);
+          ctx.ellipse(presentX - PRESENT_SIZE_HELD * 0.5, presentY - PRESENT_SIZE_HELD * 1.2, PRESENT_SIZE_HELD * 0.4, PRESENT_SIZE_HELD * 0.3, -Math.PI / 6, 0, Math.PI * 2);
           ctx.fill();
           ctx.beginPath();
-          ctx.ellipse(presentX + presentSize * 0.5, presentY - presentSize * 1.2, presentSize * 0.4, presentSize * 0.3, Math.PI / 6, 0, Math.PI * 2);
+          ctx.ellipse(presentX + PRESENT_SIZE_HELD * 0.5, presentY - PRESENT_SIZE_HELD * 1.2, PRESENT_SIZE_HELD * 0.4, PRESENT_SIZE_HELD * 0.3, Math.PI / 6, 0, Math.PI * 2);
           ctx.fill();
           ctx.beginPath();
-          ctx.arc(presentX, presentY - presentSize * 1.1, presentSize * 0.25, 0, Math.PI * 2);
+          ctx.arc(presentX, presentY - PRESENT_SIZE_HELD * 1.1, PRESENT_SIZE_HELD * 0.25, 0, Math.PI * 2);
           ctx.fill();
         }
         
@@ -1270,7 +1274,7 @@ export default function GamePage() {
           ctx.restore();
         }
         
-        // Calculate eye positions (needed for sunglasses)
+        // Calculate eye positions
         const eyeOffset = 8;
         const eyeRadius = 4;
         const angle = snake.angle || 0;
@@ -1282,7 +1286,6 @@ export default function GamePage() {
         
         // Draw eyes ONLY if not wearing sunglasses
         if (cosmetics.headItem !== 'head_sunglasses') {
-          // Left eye
           ctx.fillStyle = 'white';
           ctx.beginPath();
           ctx.arc(leftEyeX, leftEyeY, eyeRadius, 0, Math.PI * 2);
@@ -1292,7 +1295,6 @@ export default function GamePage() {
           ctx.arc(leftEyeX, leftEyeY, eyeRadius * 0.5, 0, Math.PI * 2);
           ctx.fill();
           
-          // Right eye
           ctx.fillStyle = 'white';
           ctx.beginPath();
           ctx.arc(rightEyeX, rightEyeY, eyeRadius, 0, Math.PI * 2);
@@ -1303,9 +1305,8 @@ export default function GamePage() {
           ctx.fill();
         }
         
-        // Draw head item cosmetic (if equipped)
+        // Draw head item cosmetics - ALL 5 HEAD ITEMS
         if (cosmetics.headItem === 'head_party_hat') {
-          // Colorful party hat
           ctx.save();
           const gradient = ctx.createLinearGradient(head.x, head.y - headRadius - 18, head.x, head.y - headRadius);
           gradient.addColorStop(0, '#FF10F0');
@@ -1324,7 +1325,6 @@ export default function GamePage() {
           ctx.fill();
           ctx.restore();
         } else if (cosmetics.headItem === 'head_halo') {
-          // Improved glowing halo
           ctx.save();
           ctx.globalAlpha = 0.4;
           ctx.strokeStyle = '#FFD700';
@@ -1343,7 +1343,11 @@ export default function GamePage() {
           ctx.stroke();
           ctx.restore();
         } else if (cosmetics.headItem === 'head_sunglasses') {
-          // Cool sunglasses over eyes
+          const leftEyeX = head.x + Math.cos(angle - Math.PI / 6) * eyeOffset;
+          const leftEyeY = head.y + Math.sin(angle - Math.PI / 6) * eyeOffset;
+          const rightEyeX = head.x + Math.cos(angle + Math.PI / 6) * eyeOffset;
+          const rightEyeY = head.y + Math.sin(angle + Math.PI / 6) * eyeOffset;
+          
           ctx.save();
           ctx.fillStyle = '#1a1a1a';
           ctx.beginPath();
@@ -1375,7 +1379,6 @@ export default function GamePage() {
           ctx.fill();
           ctx.restore();
         } else if (cosmetics.headItem === 'head_devil_horns') {
-          // Devil horns
           ctx.save();
           ctx.fillStyle = '#DC143C';
           ctx.shadowColor = '#8B0000';
@@ -1394,12 +1397,10 @@ export default function GamePage() {
           ctx.fill();
           ctx.restore();
         } else if (cosmetics.headItem === 'head_crown') {
-          // Royal Crown - IMPROVED ornate design
           ctx.save();
           const crownBase = head.y - headRadius - 8;
           const crownTop = head.y - headRadius - 22;
           
-          // Draw crown base (band) with gradient
           const baseGradient = ctx.createLinearGradient(head.x - 12, crownBase, head.x + 12, crownBase);
           baseGradient.addColorStop(0, '#B8860B');
           baseGradient.addColorStop(0.5, '#FFD700');
@@ -1407,12 +1408,10 @@ export default function GamePage() {
           ctx.fillStyle = baseGradient;
           ctx.fillRect(head.x - 12, crownBase, 24, 4);
           
-          // Draw crown points (3 elegant points)
           ctx.fillStyle = '#FFD700';
           ctx.strokeStyle = '#DAA520';
           ctx.lineWidth = 1.5 / camera.zoom;
           
-          // Left point
           ctx.beginPath();
           ctx.moveTo(head.x - 10, crownBase - 1);
           ctx.lineTo(head.x - 8, crownTop + 6);
@@ -1421,7 +1420,6 @@ export default function GamePage() {
           ctx.fill();
           ctx.stroke();
           
-          // Center point (tallest)
           ctx.beginPath();
           ctx.moveTo(head.x - 3, crownBase - 1);
           ctx.lineTo(head.x, crownTop);
@@ -1430,7 +1428,6 @@ export default function GamePage() {
           ctx.fill();
           ctx.stroke();
           
-          // Right point
           ctx.beginPath();
           ctx.moveTo(head.x + 6, crownBase - 1);
           ctx.lineTo(head.x + 8, crownTop + 6);
@@ -1439,24 +1436,19 @@ export default function GamePage() {
           ctx.fill();
           ctx.stroke();
           
-          // Add jewels on each point
           ctx.fillStyle = '#DC143C';
           ctx.shadowColor = '#DC143C';
           ctx.shadowBlur = 3;
-          // Left jewel
           ctx.beginPath();
           ctx.arc(head.x - 8, crownTop + 5, 2, 0, Math.PI * 2);
           ctx.fill();
-          // Center jewel (larger)
           ctx.beginPath();
           ctx.arc(head.x, crownTop - 1, 2.5, 0, Math.PI * 2);
           ctx.fill();
-          // Right jewel
           ctx.beginPath();
           ctx.arc(head.x + 8, crownTop + 5, 2, 0, Math.PI * 2);
           ctx.fill();
           
-          // Add gold accents on base
           ctx.fillStyle = '#FFD700';
           ctx.shadowBlur = 0;
           for (let i = -2; i <= 2; i++) {
@@ -1464,7 +1456,6 @@ export default function GamePage() {
             ctx.arc(head.x + i * 5, crownBase + 2, 1, 0, Math.PI * 2);
             ctx.fill();
           }
-          
           ctx.restore();
         }
         
@@ -1515,13 +1506,12 @@ export default function GamePage() {
         if (player) {
           const cosmetics = snake.equippedCosmetics || {};
           
-          // Apply name style cosmetics - ALL STYLES IMPLEMENTED
+          // Apply name style cosmetics - ALL 5 STYLES
           ctx.save();
           ctx.font = `${Math.max(12, 14 / camera.zoom)}px Arial`;
           ctx.textAlign = 'center';
           
           if (cosmetics.nameStyle === 'name_rainbow') {
-            // ANIMATED Rainbow gradient text
             const offset = (now / 50) % 100;
             const gradient = ctx.createLinearGradient(head.x - 50 + offset, 0, head.x + 50 + offset, 0);
             gradient.addColorStop(0, '#FF0000');
@@ -1535,7 +1525,6 @@ export default function GamePage() {
             ctx.shadowColor = '#000000';
             ctx.shadowBlur = 4;
           } else if (cosmetics.nameStyle === 'name_gold_glow') {
-            // Gold with STRONG glow
             ctx.fillStyle = '#FFD700';
             ctx.shadowColor = '#FFD700';
             ctx.shadowBlur = 20;
@@ -1543,7 +1532,6 @@ export default function GamePage() {
             ctx.lineWidth = 1 / camera.zoom;
             ctx.strokeText(player.name, head.x, head.y + headRadius + 20 / camera.zoom);
           } else if (cosmetics.nameStyle === 'name_neon_pulse') {
-            // RGB cycling neon pulse
             const pulse = 0.85 + 0.3 * Math.sin(now / 300);
             const colorShift = (now / 1000) % 3;
             let r = 0, g = 0, b = 255;
@@ -1566,7 +1554,6 @@ export default function GamePage() {
             ctx.shadowBlur = 30 * pulse;
             ctx.globalAlpha = pulse;
           } else if (cosmetics.nameStyle === 'name_fire') {
-            // Fire gradient text with flicker
             const flicker = 0.85 + Math.random() * 0.15;
             const gradient = ctx.createLinearGradient(head.x, head.y + headRadius + 10, head.x, head.y + headRadius + 25);
             gradient.addColorStop(0, '#FFD700');
@@ -1577,7 +1564,6 @@ export default function GamePage() {
             ctx.shadowBlur = 15;
             ctx.globalAlpha = flicker;
           } else if (cosmetics.nameStyle === 'name_ice') {
-            // Icy blue text with outline
             ctx.fillStyle = '#87CEEB';
             ctx.shadowColor = '#E0FFFF';
             ctx.shadowBlur = 12;
@@ -1585,7 +1571,6 @@ export default function GamePage() {
             ctx.lineWidth = 2 / camera.zoom;
             ctx.strokeText(player.name, head.x, head.y + headRadius + 20 / camera.zoom);
           } else {
-            // Default white
             ctx.fillStyle = '#fff';
             ctx.shadowColor = '#000';
             ctx.shadowBlur = 3;
@@ -1604,19 +1589,11 @@ export default function GamePage() {
           const headRadius = 15;
           const cosmetics = firstPlace.equippedCosmetics || {};
           
-          // Calculate crown offset based on equipped head item
           let crownOffset = 15;
-          if (cosmetics.headItem === 'head_party_hat') {
-            crownOffset = 26;
-          } else if (cosmetics.headItem === 'head_halo') {
-            crownOffset = 28;
-          } else if (cosmetics.headItem === 'head_crown') {
-            crownOffset = 35;
-          } else if (cosmetics.headItem === 'head_devil_horns') {
-            crownOffset = 30;
-          } else if (cosmetics.headItem === 'head_sunglasses') {
-            crownOffset = 15;
-          }
+          if (cosmetics.headItem === 'head_party_hat') crownOffset = 26;
+          else if (cosmetics.headItem === 'head_halo') crownOffset = 28;
+          else if (cosmetics.headItem === 'head_crown') crownOffset = 35;
+          else if (cosmetics.headItem === 'head_devil_horns') crownOffset = 30;
           
           const crownY = head.y - headRadius - crownOffset;
           
@@ -1641,54 +1618,7 @@ export default function GamePage() {
         }
       }
 
-      // Draw FREE present (not held) - CHRISTMAS THEME
-      if (apple && !apple.heldBy) {
-        const PRESENT_SIZE_FREE = 14;
-        const presentX = apple.x;
-        const presentY = apple.y;
-        const presentSize = PRESENT_SIZE_FREE;
-        
-        // Floating animation
-        const floatOffset = Math.sin(now / 1000) * 3;
-        const finalY = presentY + floatOffset;
-        
-        // Draw present box (red gift box)
-        const boxGradient = ctx.createLinearGradient(presentX - presentSize, finalY - presentSize, presentX + presentSize, finalY + presentSize);
-        boxGradient.addColorStop(0, '#DC143C');
-        boxGradient.addColorStop(1, '#8B0000');
-        ctx.fillStyle = boxGradient;
-        ctx.fillRect(presentX - presentSize, finalY - presentSize, presentSize * 2, presentSize * 2);
-        
-        // Draw present ribbon (gold horizontal)
-        ctx.fillStyle = '#FFD700';
-        ctx.fillRect(presentX - presentSize, finalY - presentSize * 0.2, presentSize * 2, presentSize * 0.4);
-        
-        // Draw present ribbon (gold vertical)
-        ctx.fillRect(presentX - presentSize * 0.2, finalY - presentSize, presentSize * 0.4, presentSize * 2);
-        
-        // Draw bow on top
-        ctx.fillStyle = '#FFD700';
-        ctx.beginPath();
-        ctx.ellipse(presentX - presentSize * 0.5, finalY - presentSize * 1.2, presentSize * 0.4, presentSize * 0.3, -Math.PI / 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(presentX + presentSize * 0.5, finalY - presentSize * 1.2, presentSize * 0.4, presentSize * 0.3, Math.PI / 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(presentX, finalY - presentSize * 1.1, presentSize * 0.25, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Add glow
-        const pulseIntensity = 0.5 + 0.5 * Math.sin(now / 500);
-        ctx.save();
-        ctx.shadowColor = '#FFD700';
-        ctx.shadowBlur = 20 * pulseIntensity;
-        ctx.globalAlpha = 0.6;
-        ctx.strokeStyle = '#FFD700';
-        ctx.lineWidth = 2 / camera.zoom;
-        ctx.strokeRect(presentX - presentSize - 2, finalY - presentSize - 2, presentSize * 2 + 4, presentSize * 2 + 4);
-        ctx.restore();
-      }
+      // Apple rendering removed - presents are drawn earlier in the render loop
 
       ctx.restore();
 
@@ -2350,7 +2280,13 @@ export default function GamePage() {
           const alivePlayers = leaderboard.filter(p => p.length > 0);
           if (alivePlayers.length === 0) return;
           
-          const currentIndex = alivePlayers.findIndex(p => p.id === spectatingPlayerId);
+          let currentIndex = alivePlayers.findIndex(p => p.id === spectatingPlayerId);
+          
+          // If no one is selected or current player not found, start from beginning
+          if (currentIndex === -1) {
+            currentIndex = direction === 'right' ? -1 : 0; // Will become 0 or last player
+          }
+          
           let newIndex;
           if (direction === 'right') {
             newIndex = (currentIndex + 1) % alivePlayers.length;
@@ -2359,7 +2295,7 @@ export default function GamePage() {
           }
           const newPlayer = alivePlayers[newIndex];
           console.log(`🔄 MANUAL SWITCH via button to ${newPlayer.name} (${newPlayer.id})`);
-          console.log(`   Previous: ${spectatingPlayerId}, New: ${newPlayer.id}`);
+          console.log(`   Previous: ${spectatingPlayerId || 'none'}, New: ${newPlayer.id}`);
           setSpectatingPlayerId(newPlayer.id);
         };
         
@@ -2390,7 +2326,10 @@ export default function GamePage() {
                       <div className="text-sm text-gray-400">{spectatedPlayer.length} length</div>
                     </>
                   ) : (
-                    <div className="text-sm text-gray-400">Loading...</div>
+                    <>
+                      <div className="text-sm text-yellow-400 font-semibold">No Player Selected</div>
+                      <div className="text-xs text-gray-400">Use arrows to choose</div>
+                    </>
                   )}
                   <div className="text-xs text-gray-500 mt-2 hidden md:block">← → to switch players</div>
                 </div>
