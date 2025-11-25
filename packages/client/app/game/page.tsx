@@ -1772,19 +1772,19 @@ export default function GamePage() {
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', duration: 0.6 }}
-          className="max-w-2xl w-full bg-cyber-dark/50 backdrop-blur-lg border border-neon-green/30 rounded-2xl p-6 md:p-8 relative z-10"
+          className="max-w-2xl w-full bg-cyber-dark/50 backdrop-blur-lg border border-neon-green/30 rounded-2xl p-4 md:p-6 relative z-10"
         >
-          {/* Floating Trophy (Winners Only) */}
+          {/* Floating Trophy (Winners Only) - Inside Card */}
           {isWinner && (
             <motion.div
-              initial={{ y: -100, scale: 0 }}
-              animate={{ y: 0, scale: 1 }}
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
               transition={{ type: 'spring', bounce: 0.5, duration: 1 }}
-              className="absolute -top-12 md:-top-16 left-1/2 -translate-x-1/2 text-6xl md:text-8xl"
+              className="text-center mb-2"
             >
               <motion.div
                 animate={{ 
-                  y: [0, -10, 0],
+                  y: [0, -8, 0],
                   rotate: [0, 5, 0, -5, 0]
                 }}
                 transition={{
@@ -1792,13 +1792,14 @@ export default function GamePage() {
                   repeat: Infinity,
                   ease: 'easeInOut'
                 }}
+                className="text-5xl md:text-6xl inline-block"
               >
                 🏆
               </motion.div>
             </motion.div>
           )}
 
-          <h2 className="text-3xl md:text-4xl font-black text-center mb-4 md:mb-6 mt-4">
+          <h2 className="text-2xl md:text-3xl font-black text-center mb-3 md:mb-4">
             {isWinner ? (
               <motion.div
                 initial={{ scale: 0 }}
@@ -1820,12 +1821,12 @@ export default function GamePage() {
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="bg-gradient-to-r from-neon-green/20 to-neon-blue/20 border-2 border-neon-green/50 rounded-xl p-4 md:p-6 mb-6 text-center"
+              className="bg-gradient-to-r from-neon-green/20 to-neon-blue/20 border-2 border-neon-green/50 rounded-xl p-3 md:p-4 mb-4 text-center"
             >
-              <div className="text-4xl md:text-5xl font-black text-neon-green mb-2">
+              <div className="text-3xl md:text-4xl font-black text-neon-green mb-1">
                 +${winnerPayout?.amount || 1} USDC
               </div>
-              <div className="text-sm text-gray-400 mb-3">
+              <div className="text-xs md:text-sm text-gray-400 mb-2">
                 {winnerPayout?.txSignature ? '✅ Sent to your wallet' : '⏳ Processing payout...'}
               </div>
               {winnerPayout?.txSignature && (
@@ -1844,11 +1845,11 @@ export default function GamePage() {
             </motion.div>
           )}
 
-          <div className="text-center mb-6 md:mb-8">
-            <div className="text-5xl md:text-6xl font-black text-neon-green mb-2">
+          <div className="text-center mb-4">
+            <div className="text-4xl md:text-5xl font-black text-neon-green mb-1">
               #{myRanking}
             </div>
-            <div className="text-gray-400">Final Placement</div>
+            <div className="text-sm text-gray-400">Final Placement</div>
           </div>
 
           {/* Apple Earned Banner */}
@@ -1856,56 +1857,56 @@ export default function GamePage() {
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="bg-gradient-to-r from-red-900/80 to-orange-900/80 border-2 border-yellow-400 rounded-xl p-4 mb-6"
+              className="bg-gradient-to-r from-red-900/80 to-orange-900/80 border-2 border-yellow-400 rounded-xl p-3 mb-4"
             >
-              <div className="flex items-center justify-center gap-3">
-                <span className="text-4xl">🎁</span>
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-3xl">🎁</span>
                 <div>
-                  <div className="text-2xl font-black text-yellow-400">+1 Present Earned!</div>
-                  <div className="text-sm text-yellow-200">Collected from the arena</div>
+                  <div className="text-xl font-black text-yellow-400">+1 Present Earned!</div>
+                  <div className="text-xs text-yellow-200">Collected from the arena</div>
                 </div>
               </div>
             </motion.div>
           )}
 
           {/* Stats */}
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="bg-cyber-darker rounded-lg p-4 border border-neon-green/30">
-              <div className="text-sm text-gray-400">Food Eaten</div>
-              <div className="text-2xl font-bold text-neon-green">{myStats?.pelletsEaten || 0}</div>
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="bg-cyber-darker rounded-lg p-3 border border-neon-green/30">
+              <div className="text-xs text-gray-400">Food Eaten</div>
+              <div className="text-xl font-bold text-neon-green">{myStats?.pelletsEaten || 0}</div>
             </div>
-            <div className="bg-cyber-darker rounded-lg p-4 border border-neon-pink/30">
-              <div className="text-sm text-gray-400">Cells Eaten</div>
-              <div className="text-2xl font-bold text-neon-pink">{myStats?.cellsEaten || 0}</div>
+            <div className="bg-cyber-darker rounded-lg p-3 border border-neon-pink/30">
+              <div className="text-xs text-gray-400">Cells Eaten</div>
+              <div className="text-xl font-bold text-neon-pink">{myStats?.cellsEaten || 0}</div>
             </div>
-            <div className="bg-cyber-darker rounded-lg p-4 border border-neon-blue/30">
-              <div className="text-sm text-gray-400">Max Length</div>
-              <div className="text-2xl font-bold text-neon-blue">{myStats?.maxLength || 0}</div>
+            <div className="bg-cyber-darker rounded-lg p-3 border border-neon-blue/30">
+              <div className="text-xs text-gray-400">Max Length</div>
+              <div className="text-xl font-bold text-neon-blue">{myStats?.maxLength || 0}</div>
             </div>
-            <div className="bg-cyber-darker rounded-lg p-4 border border-neon-purple/30">
-              <div className="text-sm text-gray-400">Time Survived</div>
-              <div className="text-2xl font-bold text-neon-purple">
+            <div className="bg-cyber-darker rounded-lg p-3 border border-neon-purple/30">
+              <div className="text-xs text-gray-400">Time Survived</div>
+              <div className="text-xl font-bold text-neon-purple">
                 {Math.floor(myStats?.timeSurvived || 0)}s
               </div>
             </div>
-            <div className="bg-cyber-darker rounded-lg p-4 border border-neon-green/30">
-              <div className="text-sm text-gray-400">Leader Time</div>
-              <div className="text-2xl font-bold text-neon-green">
+            <div className="bg-cyber-darker rounded-lg p-3 border border-neon-green/30">
+              <div className="text-xs text-gray-400">Leader Time</div>
+              <div className="text-xl font-bold text-neon-green">
                 {Math.floor(myStats?.leaderTime || 0)}s
               </div>
             </div>
-            <div className="bg-cyber-darker rounded-lg p-4 border border-neon-pink/30">
-              <div className="text-sm text-gray-400">Best Rank</div>
-              <div className="text-2xl font-bold text-neon-pink">
+            <div className="bg-cyber-darker rounded-lg p-3 border border-neon-pink/30">
+              <div className="text-xs text-gray-400">Best Rank</div>
+              <div className="text-xl font-bold text-neon-pink">
                 #{myStats?.bestRank === 999 ? '-' : myStats?.bestRank}
               </div>
             </div>
           </div>
 
           {/* Final Rankings */}
-          <div className="mb-8">
-            <h3 className="text-xl font-bold mb-4 text-neon-green">Final Rankings</h3>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="mb-6">
+            <h3 className="text-lg font-bold mb-3 text-neon-green">Final Rankings</h3>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
               {gameEnd.finalRankings.map((player, index) => (
                 <div
                   key={player.id}
@@ -1931,13 +1932,13 @@ export default function GamePage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={generateTweet}
-              className="w-full py-4 md:py-5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 rounded-xl font-bold text-white transition-all mb-4 flex items-center justify-center gap-2 text-base md:text-lg shadow-lg"
+              className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 rounded-xl font-bold text-white transition-all mb-3 flex items-center justify-center gap-2 text-sm md:text-base shadow-lg"
             >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
               </svg>
               Share Win on 𝕏
-              <span className="text-xl">🚀</span>
+              <span className="text-lg">🚀</span>
             </motion.button>
           )}
 
@@ -1962,12 +1963,12 @@ export default function GamePage() {
               localStorage.clear();
               window.location.href = '/';
             }}
-            className="w-full py-4 bg-gradient-to-r from-neon-green to-neon-blue hover:from-neon-green hover:to-neon-blue rounded-lg font-bold text-black transition-all"
+            className="w-full py-3 bg-gradient-to-r from-neon-green to-neon-blue hover:from-neon-green hover:to-neon-blue rounded-lg font-bold text-black transition-all"
           >
             Return to Lobby
           </motion.button>
           {!isWinner && (
-          <p className="text-xs text-gray-500 text-center mt-3">
+          <p className="text-xs text-gray-500 text-center mt-2">
             Auto-redirecting in a few seconds...
           </p>
           )}
@@ -2022,7 +2023,7 @@ export default function GamePage() {
                 if (typeof window === 'undefined') return '1.00';
                 const tier = localStorage.getItem('selectedTier');
                 if (tier === 'dream') {
-                  return parseInt(process.env.NEXT_PUBLIC_DREAM_PAYOUT || '1').toFixed(2);
+                  return parseFloat(process.env.NEXT_PUBLIC_DREAM_PAYOUT || '1').toFixed(2);
                 } else if (tier) {
                   // Get ACTUAL entry fee from game modes (not from tier string!)
                   const gameMode = gameModes.find(m => m.tier === tier);

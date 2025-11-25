@@ -1330,7 +1330,7 @@ export default function HomePage() {
                       {/* Dream Mode - Full Width */}
                       {gameModes.filter(mode => mode.tier === 'dream').map((mode) => {
                         const lobby = lobbies.find(l => l.tier === mode.tier);
-                        const minPlayers = lobby?.min || 10;
+                        const minPlayers = lobby?.min || parseInt(process.env.NEXT_PUBLIC_DREAM_MIN_PLAYERS || process.env.NEXT_PUBLIC_LOBBY_MIN_PLAYERS || '10');
                         
                         return (
                           <motion.div
@@ -1416,7 +1416,9 @@ export default function HomePage() {
                                 ) : (
                                   <div className="bg-black/40 rounded-xl p-4">
                                     <div className="text-xs text-purple-400/70 mb-1">Prize Pool</div>
-                                    <div className="text-2xl font-black text-green-400">$1.00</div>
+                                    <div className="text-2xl font-black text-green-400">
+                                      ${parseFloat(process.env.NEXT_PUBLIC_DREAM_PAYOUT || '1').toFixed(2)}
+                                    </div>
                                   </div>
                                 )}
                               </div>
