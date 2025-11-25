@@ -458,16 +458,6 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                       )}
                     </button>
                   </div>
-                  <div className="text-center mt-3">
-                    <a
-                      href="/store"
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 rounded-lg font-bold text-sm transition-all"
-                    >
-                      <span>🏪</span>
-                      <span>Visit Store</span>
-                      <span>🎁</span>
-                    </a>
-                  </div>
                 </div>
 
                 {/* Wallet */}

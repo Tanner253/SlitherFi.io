@@ -40,6 +40,7 @@ export async function logTransaction(transaction: Transaction): Promise<void> {
       txSignature: transaction.txSignature,
       status: transaction.status,
       timestamp: transaction.timestamp,
+      error: transaction.error || null,
     });
     
     console.log(`📝 Transaction logged to DB: ${transaction.id} - ${transaction.status}`);
@@ -104,7 +105,7 @@ export async function getAllTransactions(): Promise<Transaction[]> {
       playersCount: 0, // Not stored in new schema
       status: tx.status as 'success' | 'failed' | 'pending',
       retries: 0, // Not stored in new schema
-      error: undefined,
+      error: tx.error || undefined,
     }));
   } catch (error) {
     console.error('❌ Error fetching transactions from DB:', error);
@@ -141,7 +142,7 @@ export async function getRecentTransactions(limit: number = 50): Promise<Transac
       playersCount: 0,
       status: tx.status as 'success' | 'failed' | 'pending',
       retries: 0,
-      error: undefined,
+      error: tx.error || undefined,
     }));
   } catch (error) {
     console.error('❌ Error fetching recent transactions from DB:', error);
@@ -177,7 +178,7 @@ export async function getTransactionsByWallet(walletAddress: string): Promise<Tr
       playersCount: 0,
       status: tx.status as 'success' | 'failed' | 'pending',
       retries: 0,
-      error: undefined,
+      error: tx.error || undefined,
     }));
   } catch (error) {
     console.error('❌ Error fetching transactions by wallet from DB:', error);
