@@ -16,8 +16,15 @@ export class CosmeticsService {
    */
   async loadCosmetics(): Promise<void> {
     try {
+      // Check mongoose connection
+      const mongoose = (await import('mongoose')).default;
+      if (mongoose.connection.readyState !== 1) {
+        this.cosmetics = { trails: [], headItems: [], nameStyles: [] };
+        return;
+      }
+      
       // Try to load from database first
-      const cosmeticsFromDB = await (Cosmetic as any).find({});
+      const cosmeticsFromDB = await (Cosmetic as any).find({}).lean();
       
       if (cosmeticsFromDB && cosmeticsFromDB.length > 0) {
         // Group by category
@@ -26,28 +33,20 @@ export class CosmeticsService {
           headItems: cosmeticsFromDB.filter((c: any) => c.category === 'headItem'),
           nameStyles: cosmeticsFromDB.filter((c: any) => c.category === 'nameStyle'),
         };
-        console.log(`✅ Loaded ${cosmeticsFromDB.length} cosmetics from database`);
-        console.log(`   Trails: ${this.cosmetics.trails.length}`);
-        console.log(`   Head Items: ${this.cosmetics.headItems.length}`);
-        console.log(`   Name Styles: ${this.cosmetics.nameStyles.length}`);
+        console.log(`✅ Loaded ${cosmeticsFromDB.length} cosmetics (${this.cosmetics.trails.length} trails, ${this.cosmetics.headItems.length} items, ${this.cosmetics.nameStyles.length} styles)`);
       } else {
         // Database is empty - seed from JSON file
-        console.log('📦 Database empty - seeding cosmetics from JSON...');
+        console.log('📦 Seeding cosmetics from JSON...');
         await this.seedFromJSON();
       }
     } catch (error) {
-      console.error('❌ Failed to load cosmetics from database:', error);
+      console.error('❌ Failed to load cosmetics:', error);
       // Try to seed from JSON as fallback
       try {
         await this.seedFromJSON();
       } catch (seedError) {
         console.error('❌ Failed to seed from JSON:', seedError);
-        // Initialize with empty config
-        this.cosmetics = {
-          trails: [],
-          headItems: [],
-          nameStyles: [],
-        };
+        this.cosmetics = { trails: [], headItems: [], nameStyles: [] };
       }
     }
   }
@@ -58,8 +57,6 @@ export class CosmeticsService {
   private async seedFromJSON(): Promise<void> {
     try {
       const cosmeticsPath = path.join(__dirname, '../cosmetics.json');
-      console.log(`📂 Reading cosmetics from: ${cosmeticsPath}`);
-      
       const data = await fs.readFile(cosmeticsPath, 'utf-8');
       const jsonData: CosmeticsConfig = JSON.parse(data);
       
@@ -70,8 +67,6 @@ export class CosmeticsService {
         ...jsonData.nameStyles || []
       ];
       
-      console.log(`📥 Seeding ${allCosmetics.length} cosmetics into database...`);
-      
       // Insert into database (upsert to avoid duplicates)
       for (const cosmetic of allCosmetics) {
         await (Cosmetic as any).findOneAndUpdate(
@@ -81,7 +76,7 @@ export class CosmeticsService {
         );
       }
       
-      console.log(`✅ Successfully seeded ${allCosmetics.length} cosmetics`);
+      console.log(`✅ Seeded ${allCosmetics.length} cosmetics into database`);
       
       // Now load from database
       const cosmeticsFromDB = await (Cosmetic as any).find({});
@@ -171,8 +166,6 @@ export class CosmeticsService {
       user.apples -= cosmetic.cost;
       user.unlockedCosmetics.push(cosmeticId);
       await user.save();
-
-      console.log(`🍎 ${user.username} purchased ${cosmetic.name} for ${cosmetic.cost} apples`);
 
       return {
         success: true,
@@ -297,7 +290,6 @@ export class CosmeticsService {
       if (user.apples === undefined || user.apples === null) {
         user.apples = 0;
         await user.save();
-        console.log(`🔄 Initialized apples field for ${user.username}`);
       }
 
       return {
@@ -330,8 +322,6 @@ export class CosmeticsService {
 
       user.apples += 1;
       await user.save();
-
-      console.log(`🎁 Awarded +1 present to ${user.username} (${reason}) - New balance: ${user.apples}`);
     } catch (error) {
       console.error('❌ Failed to award apple:', error);
       throw error;

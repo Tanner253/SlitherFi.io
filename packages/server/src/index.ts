@@ -18,6 +18,7 @@ import { User } from './models/User.js';
 import { BannedIP } from './models/BannedIP.js';
 import { ChatMessage } from './models/ChatMessage.js';
 import { DreamTimer } from './models/DreamTimer.js';
+import { Cosmetic } from './models/Cosmetic.js';
 import { cosmeticsService } from './cosmeticsService.js';
 import { createPaymentRequired, extractPaymentHeader, decodePaymentPayload, validatePaymentPayload } from './lib/x402.js';
 import type { LobbyAccessToken } from './types/x402.js';
@@ -542,7 +543,6 @@ app.get('/api/user/:wallet', async (req: any, res: any) => {
         { walletAddress: req.params.wallet },
         { $set: { apples: 0 } }
       );
-      console.log(`🔄 Initialized apples field for ${user.username}`);
     }
     
     res.json({ user });
@@ -1548,7 +1548,14 @@ io.on('connection', (socket) => {
   // ==================== COSMETICS EVENTS ====================
   
   // Get all cosmetics
-  socket.on('getCosmetics', () => {
+  socket.on('getCosmetics', async () => {
+    // Force reload from database in case data was added after server start
+    try {
+      await cosmeticsService.loadCosmetics();
+    } catch (error) {
+      console.error('❌ Failed to reload cosmetics:', error);
+    }
+    
     const cosmetics = cosmeticsService.getCosmetics();
     socket.emit('cosmeticsData', cosmetics);
   });
