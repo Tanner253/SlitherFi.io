@@ -47,6 +47,8 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
   const [unlockedCosmetics, setUnlockedCosmetics] = useState<string[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<'trail' | 'headItem' | 'nameStyle' | null>(null);
   const [allCosmetics, setAllCosmetics] = useState<any>(null);
+  const [cosmeticsLoading, setCosmeticsLoading] = useState(false);
+  const [cosmeticsError, setCosmeticsError] = useState(false);
 
   useEffect(() => {
     if (isOpen && walletAddress) {
@@ -55,33 +57,73 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
     }
   }, [isOpen, walletAddress]);
 
-  const fetchAllCosmetics = async () => {
+  const fetchAllCosmetics = async (retryCount = 0) => {
+    if (cosmeticsLoading) return; // Prevent duplicate requests
+    
+    setCosmeticsLoading(true);
+    setCosmeticsError(false);
+    
     try {
       const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+      console.log('🔌 Fetching cosmetics from:', serverUrl);
       
       // Use a temporary socket just to fetch cosmetics
       const { io } = await import('socket.io-client');
-      const socket = io(serverUrl);
+      const socket = io(serverUrl, {
+        transports: ['websocket', 'polling'], // Try both transports
+        reconnection: false, // Don't auto-reconnect for this temp connection
+      });
+      
+      let resolved = false;
       
       socket.on('connect', () => {
+        console.log('✅ ProfileModal connected to server');
         socket.emit('getCosmetics');
       });
       
+      socket.on('connect_error', (error: any) => {
+        console.error('❌ ProfileModal socket connection error:', error);
+        if (!resolved) {
+          resolved = true;
+          socket.disconnect();
+          setCosmeticsLoading(false);
+          setCosmeticsError(true);
+        }
+      });
+      
       socket.on('cosmeticsData', (data: any) => {
+        if (resolved) return; // Already handled
+        resolved = true;
+        
         console.log('📦 ProfileModal received cosmetics:', data);
         setAllCosmetics(data);
+        setCosmeticsLoading(false);
+        setCosmeticsError(false);
         socket.disconnect();
       });
       
-      // Timeout safety
+      // Timeout with retry
       setTimeout(() => {
-        if (socket.connected) {
-          console.warn('⚠️ Cosmetics fetch timeout, disconnecting');
+        if (!resolved) {
+          resolved = true;
+          console.warn('⚠️ Cosmetics fetch timeout');
           socket.disconnect();
+          
+          // Retry up to 2 times
+          if (retryCount < 2) {
+            console.log(`🔄 Retrying... (attempt ${retryCount + 1})`);
+            setTimeout(() => fetchAllCosmetics(retryCount + 1), 1000);
+          } else {
+            console.error('❌ Failed to fetch cosmetics after retries');
+            setCosmeticsLoading(false);
+            setCosmeticsError(true);
+          }
         }
       }, 5000);
     } catch (error) {
-      console.error('Failed to fetch all cosmetics:', error);
+      console.error('❌ Failed to fetch all cosmetics:', error);
+      setCosmeticsLoading(false);
+      setCosmeticsError(true);
     }
   };
 
@@ -404,7 +446,12 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                     {/* Trail Slot */}
                     <button
                       onClick={() => setSelectedSlot('trail')}
-                      className="bg-blue-900/20 border-2 border-blue-700/30 hover:border-blue-500/60 rounded-xl p-4 text-center transition-all group"
+                      disabled={cosmeticsLoading || cosmeticsError}
+                      className={`bg-blue-900/20 border-2 border-blue-700/30 rounded-xl p-4 text-center transition-all group ${
+                        cosmeticsLoading || cosmeticsError 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'hover:border-blue-500/60'
+                      }`}
                     >
                       <div className="text-xs text-blue-400 mb-2">Trail</div>
                       {equippedCosmetics.trail ? (
@@ -423,7 +470,12 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                     {/* Head Item Slot */}
                     <button
                       onClick={() => setSelectedSlot('headItem')}
-                      className="bg-purple-900/20 border-2 border-purple-700/30 hover:border-purple-500/60 rounded-xl p-4 text-center transition-all group"
+                      disabled={cosmeticsLoading || cosmeticsError}
+                      className={`bg-purple-900/20 border-2 border-purple-700/30 rounded-xl p-4 text-center transition-all group ${
+                        cosmeticsLoading || cosmeticsError 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'hover:border-purple-500/60'
+                      }`}
                     >
                       <div className="text-xs text-purple-400 mb-2">Head</div>
                       {equippedCosmetics.headItem ? (
@@ -442,7 +494,12 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                     {/* Name Style Slot */}
                     <button
                       onClick={() => setSelectedSlot('nameStyle')}
-                      className="bg-green-900/20 border-2 border-green-700/30 hover:border-green-500/60 rounded-xl p-4 text-center transition-all group"
+                      disabled={cosmeticsLoading || cosmeticsError}
+                      className={`bg-green-900/20 border-2 border-green-700/30 rounded-xl p-4 text-center transition-all group ${
+                        cosmeticsLoading || cosmeticsError 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'hover:border-green-500/60'
+                      }`}
                     >
                       <div className="text-xs text-green-400 mb-2">Name</div>
                       {equippedCosmetics.nameStyle ? (
@@ -458,6 +515,24 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                       )}
                     </button>
                   </div>
+                  
+                  {/* Loading/Error State */}
+                  {cosmeticsLoading && (
+                    <div className="text-center text-xs text-gray-400 mt-2">
+                      Loading cosmetics...
+                    </div>
+                  )}
+                  {cosmeticsError && (
+                    <div className="text-center mt-2">
+                      <div className="text-xs text-red-400 mb-1">Failed to load cosmetics</div>
+                      <button
+                        onClick={() => fetchAllCosmetics(0)}
+                        className="text-xs text-green-400 hover:text-green-300 underline"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Wallet */}
@@ -556,57 +631,77 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                   </button>
                 )}
 
-                {/* List owned cosmetics for this category */}
+                {/* List ALL cosmetics for this category (unlocked at top, locked at bottom) */}
                 {!allCosmetics ? (
                   <div className="text-center py-4 text-gray-400">Loading cosmetics...</div>
-                ) : allCosmetics[selectedSlot === 'trail' ? 'trails' : selectedSlot === 'headItem' ? 'headItems' : 'nameStyles']
-                  ?.filter((c: any) => unlockedCosmetics.includes(c.id))
-                  .map((cosmetic: any) => {
-                    const isEquipped = equippedCosmetics[selectedSlot] === cosmetic.id;
+                ) : (() => {
+                    const categoryKey = selectedSlot === 'trail' ? 'trails' : selectedSlot === 'headItem' ? 'headItems' : 'nameStyles';
+                    const allItems = allCosmetics[categoryKey] || [];
+                    
+                    // Sort: unlocked first, then locked
+                    const sortedItems = [...allItems].sort((a: any, b: any) => {
+                      const aUnlocked = unlockedCosmetics.includes(a.id);
+                      const bUnlocked = unlockedCosmetics.includes(b.id);
+                      if (aUnlocked && !bUnlocked) return -1;
+                      if (!aUnlocked && bUnlocked) return 1;
+                      return 0;
+                    });
+                    
+                    return sortedItems.map((cosmetic: any) => {
+                      const isEquipped = equippedCosmetics[selectedSlot] === cosmetic.id;
+                      const isUnlocked = unlockedCosmetics.includes(cosmetic.id);
+                      const isLocked = !isUnlocked;
 
-                    return (
-                      <button
-                        key={cosmetic.id}
-                        onClick={() => {
-                          handleEquip(cosmetic.id, selectedSlot);
-                          setSelectedSlot(null);
-                        }}
-                        disabled={isEquipped}
-                        className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
-                          isEquipped
-                            ? 'bg-green-900/30 border-green-500/50 cursor-not-allowed'
-                            : 'bg-gray-900/30 border-gray-700/30 hover:border-neon-green/50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="text-3xl">{getCosmeticIcon(cosmetic.id)}</div>
-                            <div>
-                              <div className="text-sm font-bold text-white">{cosmetic.name}</div>
-                              <div className="text-xs text-gray-400">{cosmetic.description}</div>
+                      return (
+                        <button
+                          key={cosmetic.id}
+                          onClick={() => {
+                            if (isUnlocked && !isEquipped) {
+                              handleEquip(cosmetic.id, selectedSlot);
+                              setSelectedSlot(null);
+                            }
+                          }}
+                          disabled={isEquipped || isLocked}
+                          className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
+                            isEquipped
+                              ? 'bg-green-900/30 border-green-500/50 cursor-not-allowed'
+                              : isLocked
+                              ? 'bg-gray-900/10 border-gray-700/20 opacity-50 cursor-not-allowed'
+                              : 'bg-gray-900/30 border-gray-700/30 hover:border-neon-green/50 cursor-pointer'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="text-3xl">{getCosmeticIcon(cosmetic.id)}</div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <div className="text-sm font-bold text-white">{cosmetic.name}</div>
+                                  {isLocked && <span className="text-xs">🔒</span>}
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  {cosmetic.description}
+                                  {isLocked && cosmetic.cost && (
+                                    <span className="ml-2 text-red-400">🎁 {cosmetic.cost}</span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
+                            {isEquipped && (
+                              <span className="text-green-400 font-bold text-xl">✓</span>
+                            )}
                           </div>
-                          {isEquipped && (
-                            <span className="text-green-400 font-bold text-xl">✓</span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    });
+                  })()
+                }
 
-                {/* Show message if no items owned */}
+                {/* Show message if no items in this category at all */}
                 {allCosmetics && 
-                 allCosmetics[selectedSlot === 'trail' ? 'trails' : selectedSlot === 'headItem' ? 'headItems' : 'nameStyles']
-                   ?.filter((c: any) => unlockedCosmetics.includes(c.id)).length === 0 && (
+                 (allCosmetics[selectedSlot === 'trail' ? 'trails' : selectedSlot === 'headItem' ? 'headItems' : 'nameStyles'] || []).length === 0 && (
                   <div className="text-center py-8 text-gray-400">
-                    <div className="text-4xl mb-2">🔒</div>
-                    <div className="text-sm">No items owned yet</div>
-                    <a
-                      href="/store"
-                      className="inline-block mt-3 px-3 py-1.5 bg-red-600/30 hover:bg-red-600/50 rounded-lg text-xs font-bold transition-all"
-                    >
-                      Visit Store
-                    </a>
+                    <div className="text-4xl mb-2">📦</div>
+                    <div className="text-sm">No cosmetics available in this category</div>
                   </div>
                 )}
               </div>
@@ -617,4 +712,5 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
     </AnimatePresence>
   );
 }
+
 
