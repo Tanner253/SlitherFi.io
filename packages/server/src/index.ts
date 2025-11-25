@@ -534,6 +534,17 @@ app.get('/api/user/:wallet', async (req: any, res: any) => {
       return res.json({ user: null });
     }
     
+    // Ensure apples field exists (backwards compatibility)
+    if (user.apples === undefined || user.apples === null) {
+      user.apples = 0;
+      // Update in database
+      await (User as any).updateOne(
+        { walletAddress: req.params.wallet },
+        { $set: { apples: 0 } }
+      );
+      console.log(`🔄 Initialized apples field for ${user.username}`);
+    }
+    
     res.json({ user });
   } catch (error) {
     console.error('Error fetching user:', error);

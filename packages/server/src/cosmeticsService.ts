@@ -3,42 +3,96 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { CosmeticsConfig, CosmeticItem } from './types.js';
 import { User, IUser } from './models/User.js';
+import { Cosmetic } from './models/Cosmetic.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export class CosmeticsService {
   private cosmetics: CosmeticsConfig | null = null;
-  private cosmeticsPath: string;
-
-  constructor() {
-    // Path to cosmetics.json in server root
-    this.cosmeticsPath = path.join(__dirname, '../cosmetics.json');
-  }
 
   /**
-   * Load cosmetics config from JSON file
+   * Load cosmetics from database (with fallback to seed from JSON)
    */
   async loadCosmetics(): Promise<void> {
     try {
-      console.log(`📂 Loading cosmetics from: ${this.cosmeticsPath}`);
-      console.log(`📂 __dirname is: ${__dirname}`);
-      const data = await fs.readFile(this.cosmeticsPath, 'utf-8');
-      this.cosmetics = JSON.parse(data);
-      console.log(`✅ Loaded ${this.getAllCosmetics().length} cosmetics from config`);
-      console.log(`   Trails: ${this.cosmetics.trails?.length || 0}`);
-      console.log(`   Head Items: ${this.cosmetics.headItems?.length || 0}`);
-      console.log(`   Name Styles: ${this.cosmetics.nameStyles?.length || 0}`);
+      // Try to load from database first
+      const cosmeticsFromDB = await (Cosmetic as any).find({});
+      
+      if (cosmeticsFromDB && cosmeticsFromDB.length > 0) {
+        // Group by category
+        this.cosmetics = {
+          trails: cosmeticsFromDB.filter((c: any) => c.category === 'trail'),
+          headItems: cosmeticsFromDB.filter((c: any) => c.category === 'headItem'),
+          nameStyles: cosmeticsFromDB.filter((c: any) => c.category === 'nameStyle'),
+        };
+        console.log(`✅ Loaded ${cosmeticsFromDB.length} cosmetics from database`);
+        console.log(`   Trails: ${this.cosmetics.trails.length}`);
+        console.log(`   Head Items: ${this.cosmetics.headItems.length}`);
+        console.log(`   Name Styles: ${this.cosmetics.nameStyles.length}`);
+      } else {
+        // Database is empty - seed from JSON file
+        console.log('📦 Database empty - seeding cosmetics from JSON...');
+        await this.seedFromJSON();
+      }
     } catch (error) {
-      console.error('❌ Failed to load cosmetics config:', error);
-      console.error(`   Attempted path: ${this.cosmeticsPath}`);
-      console.error(`   Error details:`, error);
-      // Initialize with empty config
+      console.error('❌ Failed to load cosmetics from database:', error);
+      // Try to seed from JSON as fallback
+      try {
+        await this.seedFromJSON();
+      } catch (seedError) {
+        console.error('❌ Failed to seed from JSON:', seedError);
+        // Initialize with empty config
+        this.cosmetics = {
+          trails: [],
+          headItems: [],
+          nameStyles: [],
+        };
+      }
+    }
+  }
+
+  /**
+   * Seed cosmetics from JSON file into database
+   */
+  private async seedFromJSON(): Promise<void> {
+    try {
+      const cosmeticsPath = path.join(__dirname, '../cosmetics.json');
+      console.log(`📂 Reading cosmetics from: ${cosmeticsPath}`);
+      
+      const data = await fs.readFile(cosmeticsPath, 'utf-8');
+      const jsonData: CosmeticsConfig = JSON.parse(data);
+      
+      // Flatten all cosmetics
+      const allCosmetics = [
+        ...jsonData.trails || [],
+        ...jsonData.headItems || [],
+        ...jsonData.nameStyles || []
+      ];
+      
+      console.log(`📥 Seeding ${allCosmetics.length} cosmetics into database...`);
+      
+      // Insert into database (upsert to avoid duplicates)
+      for (const cosmetic of allCosmetics) {
+        await (Cosmetic as any).findOneAndUpdate(
+          { id: cosmetic.id },
+          cosmetic,
+          { upsert: true, new: true }
+        );
+      }
+      
+      console.log(`✅ Successfully seeded ${allCosmetics.length} cosmetics`);
+      
+      // Now load from database
+      const cosmeticsFromDB = await (Cosmetic as any).find({});
       this.cosmetics = {
-        trails: [],
-        headItems: [],
-        nameStyles: [],
+        trails: cosmeticsFromDB.filter((c: any) => c.category === 'trail'),
+        headItems: cosmeticsFromDB.filter((c: any) => c.category === 'headItem'),
+        nameStyles: cosmeticsFromDB.filter((c: any) => c.category === 'nameStyle'),
       };
+    } catch (error) {
+      console.error('❌ Failed to seed cosmetics:', error);
+      throw error;
     }
   }
 
@@ -96,6 +150,11 @@ export class CosmeticsService {
       const user = await (User as any).findOne({ walletAddress });
       if (!user) {
         return { success: false, error: 'user_not_found' };
+      }
+
+      // Ensure apples field exists (backwards compatibility)
+      if (user.apples === undefined || user.apples === null) {
+        user.apples = 0;
       }
 
       // Check if already owned
@@ -234,6 +293,13 @@ export class CosmeticsService {
         return { success: false, error: 'user_not_found' };
       }
 
+      // Ensure apples field exists (backwards compatibility)
+      if (user.apples === undefined || user.apples === null) {
+        user.apples = 0;
+        await user.save();
+        console.log(`🔄 Initialized apples field for ${user.username}`);
+      }
+
       return {
         success: true,
         appleBalance: user.apples || 0,
@@ -257,10 +323,15 @@ export class CosmeticsService {
         return;
       }
 
+      // Ensure apples field exists (backwards compatibility)
+      if (user.apples === undefined || user.apples === null) {
+        user.apples = 0;
+      }
+
       user.apples += 1;
       await user.save();
 
-      console.log(`🍎 Awarded +1 apple to ${user.username} (${reason}) - New balance: ${user.apples}`);
+      console.log(`🎁 Awarded +1 present to ${user.username} (${reason}) - New balance: ${user.apples}`);
     } catch (error) {
       console.error('❌ Failed to award apple:', error);
       throw error;
