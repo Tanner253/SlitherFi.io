@@ -214,7 +214,10 @@ export class CosmeticsService {
         user.equippedCosmetics = {};
       }
       user.equippedCosmetics[slot] = cosmeticId;
+      user.markModified('equippedCosmetics'); // Ensure Mongoose tracks the change
       await user.save();
+      
+      console.log(`✅ ${user.username} equipped ${cosmeticId} to ${slot}`);
 
       return {
         success: true,

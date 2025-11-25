@@ -93,14 +93,37 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
       const { io } = await import('socket.io-client');
       const socket = io(serverUrl);
 
-      socket.emit('equipCosmetic', { walletAddress, cosmeticId, slot });
+      // Wait for connection before emitting
+      socket.on('connect', () => {
+        console.log('🔌 Connected to server for equip');
+        socket.emit('equipCosmetic', { walletAddress, cosmeticId, slot });
+      });
+
       socket.on('equipResult', (result: any) => {
+        console.log('📦 Equip result received:', result);
         if (result.success) {
           setEquippedCosmetics(result.equippedCosmetics);
+          
+          // Also update profile state
+          if (profile) {
+            setProfile({
+              ...profile,
+              equippedCosmetics: result.equippedCosmetics
+            });
+          }
+          
           setSelectedSlot(null);
+          console.log('✅ Cosmetic equipped successfully');
+        } else {
+          console.error('❌ Failed to equip:', result.error);
         }
         socket.disconnect();
       });
+      
+      // Timeout safety
+      setTimeout(() => {
+        socket.disconnect();
+      }, 5000);
     } catch (error) {
       console.error('Failed to equip cosmetic:', error);
     }
