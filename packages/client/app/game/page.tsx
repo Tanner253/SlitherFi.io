@@ -1014,14 +1014,32 @@ export default function GamePage() {
 
       const now = Date.now();
       
-      // Falling snow particles (CHRISTMAS THEME)
+      // Falling snow particles (CHRISTMAS THEME) - Only in safe zone
       const gameProgress = timeRemaining !== null ? Math.max(0, 1 - (timeRemaining / 300)) : 0.3;
       const targetSnowCount = Math.floor(150 + (gameProgress * 150));
       
+      // Use current map bounds (safe zone) or default to full map
+      const safeBounds = mapBounds ? {
+        minX: mapBounds.minX,
+        maxX: mapBounds.maxX,
+        minY: mapBounds.minY,
+        maxY: mapBounds.maxY
+      } : { minX: 0, maxX: 5000, minY: 0, maxY: 5000 };
+      
+      const safeWidth = safeBounds.maxX - safeBounds.minX;
+      const safeHeight = safeBounds.maxY - safeBounds.minY;
+      
+      // Remove particles outside safe zone
+      snowParticlesRef.current = snowParticlesRef.current.filter(particle => 
+        particle.x >= safeBounds.minX && particle.x <= safeBounds.maxX &&
+        particle.y >= safeBounds.minY && particle.y <= safeBounds.maxY
+      );
+      
+      // Spawn new particles within safe zone
       while (snowParticlesRef.current.length < targetSnowCount) {
         snowParticlesRef.current.push({
-          x: Math.random() * 5000,
-          y: Math.random() * 5000,
+          x: Math.random() * safeWidth + safeBounds.minX,
+          y: Math.random() * safeHeight + safeBounds.minY,
           speed: Math.random() * 1.5 + 0.5,
           drift: Math.random() * 0.3 - 0.15,
           size: Math.random() * 1.5 + 1
@@ -1032,13 +1050,16 @@ export default function GamePage() {
         snowParticlesRef.current = snowParticlesRef.current.slice(0, targetSnowCount);
       }
       
+      // Update and draw particles, wrapping within safe zone
       snowParticlesRef.current.forEach(particle => {
         particle.y += particle.speed;
         particle.x += particle.drift;
         
-        if (particle.y > 5000) particle.y = 0;
-        if (particle.x > 5000) particle.x = 0;
-        if (particle.x < 0) particle.x = 5000;
+        // Wrap within safe zone boundaries
+        if (particle.y > safeBounds.maxY) particle.y = safeBounds.minY;
+        if (particle.y < safeBounds.minY) particle.y = safeBounds.maxY;
+        if (particle.x > safeBounds.maxX) particle.x = safeBounds.minX;
+        if (particle.x < safeBounds.minX) particle.x = safeBounds.maxX;
         
         ctx.fillStyle = `rgba(255, 255, 255, 0.8)`;
         ctx.beginPath();

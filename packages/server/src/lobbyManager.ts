@@ -498,14 +498,6 @@ export class LobbyManager {
     // Check if we should start countdown
     this.checkLobbyCountdown(lobby);
 
-    // Auto-fill bots in dev mode (only if lobby is waiting and no game exists)
-    if (config.dev.autoFillBots && 
-        lobby.status === 'waiting' && 
-        !this.games.has(lobby.id) &&
-        lobby.players.size < config.lobby.minPlayers) {
-      this.fillWithBots(lobby);
-    }
-
     return { success: true };
   }
 
@@ -538,20 +530,23 @@ export class LobbyManager {
   }
 
   /**
-   * Fill lobby with bots for testing (fills to minimum player requirement)
+   * Add bots to lobby (HARDCODED: Always add 5 bots when game starts)
    */
   private fillWithBots(lobby: Lobby): void {
     const currentBotCount = Array.from(lobby.players.values()).filter(p => p.isBot).length;
-    const needed = config.lobby.minPlayers - lobby.players.size;
     
-    if (needed <= 0) return;
+    // HARDCODED: Always add exactly 5 bots total
+    const targetBotCount = 5;
+    const needed = targetBotCount - currentBotCount;
+    
+    if (needed <= 0) return; // Already have 5 or more bots
     
     // SAFEGUARD: Don't fill if game already exists or not waiting
     if (this.games.has(lobby.id) || lobby.status !== 'waiting') {
       return;
     }
     
-    // Available cosmetics for systematic assignment (ensure all are used)
+    // Available cosmetics - bots can use ANY cosmetic
     const trails = ['trail_basic_glow', 'trail_rainbow', 'trail_fire', 'trail_lightning', 'trail_shadow'];
     const headItems = ['head_party_hat', 'head_halo', 'head_sunglasses', 'head_crown', 'head_devil_horns'];
     const nameStyles = ['name_rainbow', 'name_gold_glow', 'name_neon_pulse', 'name_fire', 'name_ice'];
@@ -560,12 +555,11 @@ export class LobbyManager {
       const botId = `bot_${Date.now()}_${i}`;
       const botName = `Bot ${currentBotCount + i + 1}`;
       
-      // Assign cosmetics systematically to ensure ALL cosmetics are demoed
-      // Each bot gets one from each category, cycling through all options
+      // Randomly assign cosmetics from any available option
       const randomCosmetics: any = {
-        trail: trails[i % trails.length],
-        headItem: headItems[i % headItems.length],
-        nameStyle: nameStyles[i % nameStyles.length],
+        trail: trails[Math.floor(Math.random() * trails.length)],
+        headItem: headItems[Math.floor(Math.random() * headItems.length)],
+        nameStyle: nameStyles[Math.floor(Math.random() * nameStyles.length)],
       };
 
       lobby.players.set(botId, {
@@ -589,8 +583,7 @@ export class LobbyManager {
       });
     }
 
-    console.log(`Filled ${lobby.tier} lobby with ${needed} bots to reach min ${config.lobby.minPlayers}`);
-    this.checkLobbyCountdown(lobby);
+    console.log(`✅ HARDCODED: Added ${needed} bots to ${lobby.tier} (Total bots now: ${targetBotCount})`);
   }
 
   /**
@@ -687,6 +680,10 @@ export class LobbyManager {
     
     // SAFEGUARD: Check database for active session (in case server restarted)
     await this.checkForActiveSession(lobby.id);
+
+    // HARDCODED: Add 5 bots to every game when it starts
+    this.fillWithBots(lobby);
+    console.log(`✅ Added 5 bots to ${lobby.id} before game start`);
 
     lobby.status = 'playing';
     lobby.gameStartTime = Date.now();

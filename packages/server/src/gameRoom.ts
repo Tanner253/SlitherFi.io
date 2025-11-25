@@ -1063,16 +1063,39 @@ export class GameRoom {
     if (winnerId && this.onWinnerDetermined) {
       const winner = this.players.get(winnerId);
       if (winner) {
+        let actualWinnerId = winnerId;
+        let actualWinnerName = winner.name;
+        
+        // If bot won, find the best human player for payout
         if (winner.isBot) {
-          console.log(`🤖 Winner is bot (${winner.name}) - will pay highest ranking human`);
+          console.log(`🤖 Bot won (${winner.name}) - finding best human player for payout...`);
+          
+          // Find first human in rankings (already sorted by timeSurvived, length, kills)
+          const bestHuman = rankings.find(r => {
+            const player = this.players.get(r.id);
+            return player && !player.isBot;
+          });
+          
+          if (bestHuman) {
+            const humanPlayer = this.players.get(bestHuman.id);
+            if (humanPlayer) {
+              actualWinnerId = bestHuman.id;
+              actualWinnerName = humanPlayer.name;
+              console.log(`   ✅ Best human found: ${humanPlayer.name} (rank #${rankings.findIndex(r => r.id === bestHuman.id) + 1})`);
+              console.log(`   💰 Payout will go to: ${humanPlayer.name}`);
+            }
+          } else {
+            console.error(`   ❌ No human players found in game! This should not happen.`);
+            return; // Don't trigger payout if no humans
+          }
         } else {
-          console.log(`💰 Winner is human player - triggering payout for ${winner.name}`);
+          console.log(`💰 Human player won - triggering payout for ${winner.name}`);
         }
         
-        // Always trigger callback (handles both human and bot wins)
-        this.onWinnerDetermined(winnerId, winner.name, this.id, this.sessionId || this.id, this.tier, this.players.size)
+        // Trigger callback with actual winner (human, even if bot won the game)
+        this.onWinnerDetermined(actualWinnerId, actualWinnerName, this.id, this.sessionId || this.id, this.tier, this.players.size)
           .catch(error => {
-            console.error(`❌ PAYOUT FAILED for ${winner.name}:`, error);
+            console.error(`❌ PAYOUT FAILED for ${actualWinnerName}:`, error);
           });
       }
     }

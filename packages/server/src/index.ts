@@ -146,22 +146,8 @@ if (process.env.PLATFORM_WALLET_PRIVATE_KEY && process.env.SOLANA_RPC_URL) {
       const isDreamMode = tier === 'dream';
       
       if (isDreamMode) {
-        // Dream Mode: Free hourly game (only for humans)
-        const isBot = winnerName.startsWith('Bot ');
-        
-        if (isBot) {
-          console.log('\n╔════════════════════════════════════════════════════════════╗');
-          console.log('║           🤖 DREAM MODE - BOT WIN                          ║');
-          console.log('╠════════════════════════════════════════════════════════════╣');
-          console.log(`║ Session ID:    ${sessionId.padEnd(44)} ║`);
-          console.log(`║ Winner:        ${winnerName.padEnd(44)} ║`);
-          console.log('╠════════════════════════════════════════════════════════════╣');
-          console.log('║ 🚫 PAYOUT:      $0.00 (Bots not eligible)                  ║');
-          console.log('║ Type:          DREAM MODE (Human players only)             ║');
-          console.log('╚════════════════════════════════════════════════════════════╝\n');
-          return;
-        }
-        
+        // Dream Mode: Free hourly game
+        // Note: winnerId is always a human now (gameRoom.ts substitutes best human if bot won)
         const walletAddress = playerWallets.get(winnerId);
         
         if (!walletAddress) {
@@ -220,54 +206,20 @@ if (process.env.PLATFORM_WALLET_PRIVATE_KEY && process.env.SOLANA_RPC_URL) {
         }
       } else {
         // Paid tier: Use distribution service (80/15/5)
+        // Note: winnerId is always a human now (gameRoom.ts substitutes best human if bot won)
         console.log(`💰 Processing pot distribution for ${tier} game: ${sessionId}`);
         
-        // Check if winner is a bot
-        const isBot = winnerName.startsWith('Bot ');
-        let actualWinnerWallet = playerWallets.get(winnerId);
-        let actualWinnerName = winnerName;
-        
-        // Get actual pot from paid entry fees (needed for all checks)
-        const totalPot = await entryFeeService!.getLobbyPot(gameId);
-        const paidPlayers = await entryFeeService!.getPaidPlayerCount(gameId);
-        
-        // If bot won, find highest ranking human player
-        if (isBot) {
-          console.log(`🤖 Bot won - finding highest ranking human player...`);
-          const humanWinner = lobbyManager.getHighestRankingHuman(gameId);
-          
-          if (humanWinner) {
-            actualWinnerWallet = playerWallets.get(humanWinner.playerId);
-            actualWinnerName = humanWinner.playerName;
-            console.log(`   Highest human: ${actualWinnerName}`);
-          } else {
-            console.log('\n╔════════════════════════════════════════════════════════════╗');
-            console.log('║           🤖 ALL BOTS GAME - NO PAYOUT                     ║');
-            console.log('╠════════════════════════════════════════════════════════════╣');
-            console.log(`║ Session ID:    ${sessionId.padEnd(44)} ║`);
-            console.log(`║ Tier:          $${tier.padEnd(43)} ║`);
-            console.log('╠════════════════════════════════════════════════════════════╣');
-            console.log(`║ 💵 POT:         $${totalPot.toFixed(2).padStart(42)} ║`);
-            console.log('╠════════════════════════════════════════════════════════════╣');
-            console.log('║ 🏦 DISPOSITION: Returned to treasury (no human winners)    ║');
-            console.log('║ 💰 Platform:    +$' + totalPot.toFixed(2).padStart(40) + ' ║');
-            console.log('╚════════════════════════════════════════════════════════════╝\n');
-            
-            // CRITICAL: Clear payment records to prevent pot accumulation
-            const lobbyId = sessionId.split('_').slice(0, 2).join('_');
-            if (entryFeeService) {
-              await entryFeeService.clearLobbyPayments(lobbyId);
-              console.log(`🧹 Payment records cleared for ${lobbyId} (bot-only game cleanup)\n`);
-            }
-            
-            return; // Pot stays in treasury
-          }
-        }
+        const actualWinnerWallet = playerWallets.get(winnerId);
+        const actualWinnerName = winnerName;
         
         if (!actualWinnerWallet) {
           console.error(`❌ No wallet address found for winner ${actualWinnerName}`);
           return;
         }
+        
+        // Get actual pot from paid entry fees
+        const totalPot = await entryFeeService!.getLobbyPot(gameId);
+        const paidPlayers = await entryFeeService!.getPaidPlayerCount(gameId);
         
         if (totalPot === 0 || paidPlayers === 0) {
           console.log('\n╔════════════════════════════════════════════════════════════╗');
@@ -301,7 +253,7 @@ if (process.env.PLATFORM_WALLET_PRIVATE_KEY && process.env.SOLANA_RPC_URL) {
           paidPlayers,
           actualWinnerWallet,
           actualWinnerName,
-          isBot,
+          false, // Always false now (gameRoom.ts ensures winner is human)
           entryFeeService // Pass service so it can clear payments immediately
         );
         

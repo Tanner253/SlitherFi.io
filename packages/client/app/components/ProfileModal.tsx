@@ -76,7 +76,7 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
       const data = await response.json();
       console.log('✅ ProfileModal received cosmetics:', data);
       
-      setAllCosmetics(data);
+        setAllCosmetics(data);
       setCosmeticsLoading(false);
       setCosmeticsError(false);
     } catch (error) {
@@ -98,26 +98,26 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress, cosmeticId, slot })
       });
-      
+
       const result = await response.json();
-      console.log('📦 Equip result received:', result);
+        console.log('📦 Equip result received:', result);
       
-      if (result.success) {
-        setEquippedCosmetics(result.equippedCosmetics);
-        
-        // Also update profile state
-        if (profile) {
-          setProfile({
-            ...profile,
-            equippedCosmetics: result.equippedCosmetics
-          });
+        if (result.success) {
+          setEquippedCosmetics(result.equippedCosmetics);
+          
+          // Also update profile state
+          if (profile) {
+            setProfile({
+              ...profile,
+              equippedCosmetics: result.equippedCosmetics
+            });
+          }
+          
+          setSelectedSlot(null);
+          console.log('✅ Cosmetic equipped successfully');
+        } else {
+          console.error('❌ Failed to equip:', result.error);
         }
-        
-        setSelectedSlot(null);
-        console.log('✅ Cosmetic equipped successfully');
-      } else {
-        console.error('❌ Failed to equip:', result.error);
-      }
     } catch (error) {
       console.error('❌ Failed to equip cosmetic:', error);
     }
@@ -135,29 +135,29 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress, slot })
       });
-      
+
       const result = await response.json();
-      console.log('📦 Unequip result received:', result);
+        console.log('📦 Unequip result received:', result);
       
-      if (result.success) {
-        // IMPORTANT: Create a new object without the unequipped slot
-        const newEquipped = { ...equippedCosmetics };
-        delete newEquipped[slot]; // Remove the slot
-        
-        console.log('✅ Updating equipped cosmetics to:', newEquipped);
-        console.log('   Removed slot:', slot);
-        
-        setEquippedCosmetics(newEquipped);
-        
-        // Force re-render by also updating profile if it exists
-        if (profile) {
-          setProfile({
-            ...profile,
-            equippedCosmetics: newEquipped
-          });
-        }
-      } else {
-        console.error('❌ Failed to unequip:', result.error);
+        if (result.success) {
+          // IMPORTANT: Create a new object without the unequipped slot
+          const newEquipped = { ...equippedCosmetics };
+          delete newEquipped[slot]; // Remove the slot
+          
+          console.log('✅ Updating equipped cosmetics to:', newEquipped);
+          console.log('   Removed slot:', slot);
+          
+          setEquippedCosmetics(newEquipped);
+          
+          // Force re-render by also updating profile if it exists
+          if (profile) {
+            setProfile({
+              ...profile,
+              equippedCosmetics: newEquipped
+            });
+          }
+        } else {
+          console.error('❌ Failed to unequip:', result.error);
       }
     } catch (error) {
       console.error('❌ Failed to unequip cosmetic:', error);
@@ -470,10 +470,10 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                       <button
                         onClick={() => fetchAllCosmetics()}
                         className="text-xs text-green-400 hover:text-green-300 underline"
-                      >
+                    >
                         Retry
                       </button>
-                    </div>
+                  </div>
                   )}
                 </div>
 
@@ -590,34 +590,34 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                     });
                     
                     return sortedItems.map((cosmetic: any) => {
-                      const isEquipped = equippedCosmetics[selectedSlot] === cosmetic.id;
+                    const isEquipped = equippedCosmetics[selectedSlot] === cosmetic.id;
                       const isUnlocked = unlockedCosmetics.includes(cosmetic.id);
                       const isLocked = !isUnlocked;
 
-                      return (
-                        <button
-                          key={cosmetic.id}
-                          onClick={() => {
+                    return (
+                      <button
+                        key={cosmetic.id}
+                        onClick={() => {
                             if (isUnlocked && !isEquipped) {
-                              handleEquip(cosmetic.id, selectedSlot);
-                              setSelectedSlot(null);
+                          handleEquip(cosmetic.id, selectedSlot);
+                          setSelectedSlot(null);
                             }
-                          }}
+                        }}
                           disabled={isEquipped || isLocked}
-                          className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
-                            isEquipped
-                              ? 'bg-green-900/30 border-green-500/50 cursor-not-allowed'
+                        className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
+                          isEquipped
+                            ? 'bg-green-900/30 border-green-500/50 cursor-not-allowed'
                               : isLocked
                               ? 'bg-gray-900/10 border-gray-700/20 opacity-50 cursor-not-allowed'
                               : 'bg-gray-900/30 border-gray-700/30 hover:border-neon-green/50 cursor-pointer'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="text-3xl">{getCosmeticIcon(cosmetic.id)}</div>
-                              <div>
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="text-3xl">{getCosmeticIcon(cosmetic.id)}</div>
+                            <div>
                                 <div className="flex items-center gap-2">
-                                  <div className="text-sm font-bold text-white">{cosmetic.name}</div>
+                              <div className="text-sm font-bold text-white">{cosmetic.name}</div>
                                   {isLocked && <span className="text-xs">🔒</span>}
                                 </div>
                                 <div className="text-xs text-gray-400">
@@ -626,14 +626,14 @@ export function ProfileModal({ isOpen, onClose, walletAddress, appleBalance = 0,
                                     <span className="ml-2 text-red-400">🎁 {cosmetic.cost}</span>
                                   )}
                                 </div>
-                              </div>
                             </div>
-                            {isEquipped && (
-                              <span className="text-green-400 font-bold text-xl">✓</span>
-                            )}
                           </div>
-                        </button>
-                      );
+                          {isEquipped && (
+                            <span className="text-green-400 font-bold text-xl">✓</span>
+                          )}
+                        </div>
+                      </button>
+                    );
                     });
                   })()
                 }

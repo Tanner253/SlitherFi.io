@@ -69,7 +69,7 @@ export default function StorePage() {
       console.error('Failed to fetch store data:', error);
       setLoading(false);
       setToastMessage({ message: '❌ Failed to load store data', type: 'error' });
-    }
+      }
   };
 
   // Auto-dismiss toast after 4 seconds
@@ -94,10 +94,10 @@ export default function StorePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          walletAddress,
-          cosmeticId: selectedCosmetic.id,
+      walletAddress,
+      cosmeticId: selectedCosmetic.id,
         })
-      });
+    });
       
       const result = await response.json();
       console.log('🎁 Purchase result:', result);
