@@ -1,0 +1,242 @@
+{
+  "trails": [
+    {
+      "id": "trail_basic_glow",
+      "name": "Basic Glow",
+      "description": "A simple glowing trail that follows your snake",
+      "category": "trail",
+      "cost": 5,
+      "rarity": "common",
+      "renderData": {
+        "type": "glow",
+        "color": "#4ECDC4",
+        "glowSize": 15,
+        "opacity": 0.6,
+        "lifetime": 800
+      }
+    },
+    {
+      "id": "trail_shadow",
+      "name": "Shadow Trail",
+      "description": "Dark smoke follows your every move",
+      "category": "trail",
+      "cost": 50,
+      "rarity": "common",
+      "renderData": {
+        "type": "particles",
+        "colors": ["#2E003E", "#3D0066", "#1A001F"],
+        "particleSize": 8,
+        "emissionRate": 3,
+        "lifetime": 1200,
+        "fade": true
+      }
+    },
+    {
+      "id": "trail_fire",
+      "name": "Fire Trail",
+      "description": "Blazing embers and flames mark your path",
+      "category": "trail",
+      "cost": 100,
+      "rarity": "rare",
+      "renderData": {
+        "type": "particles",
+        "colors": ["#FF4500", "#FF6347", "#FFD700", "#FF8C00"],
+        "particleSize": 6,
+        "emissionRate": 4,
+        "lifetime": 900,
+        "flicker": true
+      }
+    },
+    {
+      "id": "trail_lightning",
+      "name": "Lightning Trail",
+      "description": "Electric sparks and bolts crackle behind you",
+      "category": "trail",
+      "cost": 150,
+      "rarity": "epic",
+      "renderData": {
+        "type": "particles",
+        "colors": ["#00F0FF", "#FFFFFF", "#4169E1"],
+        "particleSize": 4,
+        "emissionRate": 5,
+        "lifetime": 700,
+        "spark": true
+      }
+    },
+    {
+      "id": "trail_rainbow",
+      "name": "Rainbow Trail",
+      "description": "Multi-colored particles that shimmer behind you",
+      "category": "trail",
+      "cost": 200,
+      "rarity": "legendary",
+      "renderData": {
+        "type": "particles",
+        "colors": ["#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8", "#F7DC6F"],
+        "particleSize": 5,
+        "emissionRate": 3,
+        "lifetime": 1000
+      }
+    }
+  ],
+  "headItems": [
+    {
+      "id": "head_party_hat",
+      "name": "Party Hat",
+      "description": "Colorful cone hat perfect for celebrations",
+      "category": "headItem",
+      "cost": 1,
+      "rarity": "common",
+      "renderData": {
+        "type": "triangle",
+        "color": "#FF10F0",
+        "width": 12,
+        "height": 18,
+        "offsetY": -18,
+        "rotation": 0
+      }
+    },
+    {
+      "id": "head_halo",
+      "name": "Halo",
+      "description": "Golden ring of virtue above your head",
+      "category": "headItem",
+      "cost": 50,
+      "rarity": "rare",
+      "renderData": {
+        "type": "circle",
+        "color": "#FFD700",
+        "radius": 12,
+        "offsetY": -25,
+        "glow": true,
+        "hollow": true
+      }
+    },
+    {
+      "id": "head_sunglasses",
+      "name": "Sunglasses",
+      "description": "Cool shades for the coolest snakes",
+      "category": "headItem",
+      "cost": 75,
+      "rarity": "rare",
+      "renderData": {
+        "type": "sunglasses",
+        "color": "#000000",
+        "width": 16,
+        "height": 4,
+        "offsetY": -2
+      }
+    },
+    {
+      "id": "head_crown",
+      "name": "Royal Crown",
+      "description": "An ornate crown fit for snake royalty",
+      "category": "headItem",
+      "cost": 100,
+      "rarity": "epic",
+      "renderData": {
+        "type": "crown",
+        "color": "#FFD700",
+        "accentColor": "#FF0000",
+        "width": 20,
+        "height": 14,
+        "offsetY": -20,
+        "points": 5
+      }
+    },
+    {
+      "id": "head_devil_horns",
+      "name": "Devil Horns",
+      "description": "Show your mischievous side with red horns",
+      "category": "headItem",
+      "cost": 150,
+      "rarity": "legendary",
+      "renderData": {
+        "type": "horns",
+        "color": "#DC143C",
+        "width": 8,
+        "height": 12,
+        "offsetY": -15,
+        "spacing": 20
+      }
+    }
+  ],
+  "nameStyles": [
+    {
+      "id": "name_ice",
+      "name": "Ice Text",
+      "description": "Frosty light blue with icy shimmer",
+      "category": "nameStyle",
+      "cost": 25,
+      "rarity": "common",
+      "renderData": {
+        "type": "solid",
+        "color": "#87CEEB",
+        "shadowBlur": 10,
+        "shadowColor": "#E0FFFF",
+        "outline": true,
+        "outlineColor": "#4682B4"
+      }
+    },
+    {
+      "id": "name_gold_glow",
+      "name": "Glowing Gold",
+      "description": "Golden text with a powerful glow",
+      "category": "nameStyle",
+      "cost": 50,
+      "rarity": "rare",
+      "renderData": {
+        "type": "solid",
+        "color": "#FFD700",
+        "shadowBlur": 15,
+        "shadowColor": "#FFD700",
+        "glow": true
+      }
+    },
+    {
+      "id": "name_fire",
+      "name": "Fire Text",
+      "description": "Flame-colored gradient with flickering effect",
+      "category": "nameStyle",
+      "cost": 100,
+      "rarity": "epic",
+      "renderData": {
+        "type": "gradient",
+        "colors": ["#FF0000", "#FF4500", "#FFD700"],
+        "shadowBlur": 12,
+        "shadowColor": "#FF4500",
+        "animate": "flicker"
+      }
+    },
+    {
+      "id": "name_rainbow",
+      "name": "Rainbow Text",
+      "description": "Your name shimmers in rainbow colors",
+      "category": "nameStyle",
+      "cost": 150,
+      "rarity": "epic",
+      "renderData": {
+        "type": "gradient",
+        "colors": ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082", "#9400D3"],
+        "shadowBlur": 4,
+        "shadowColor": "#000000"
+      }
+    },
+    {
+      "id": "name_neon_pulse",
+      "name": "Neon Pulse",
+      "description": "Animated neon glow that pulses with energy",
+      "category": "nameStyle",
+      "cost": 200,
+      "rarity": "legendary",
+      "renderData": {
+        "type": "solid",
+        "color": "#00F0FF",
+        "shadowBlur": 20,
+        "shadowColor": "#00F0FF",
+        "animate": "pulse",
+        "pulseSpeed": 1.5
+      }
+    }
+  ]
+}

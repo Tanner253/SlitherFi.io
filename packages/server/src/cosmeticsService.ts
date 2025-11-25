@@ -21,11 +21,18 @@ export class CosmeticsService {
    */
   async loadCosmetics(): Promise<void> {
     try {
+      console.log(`📂 Loading cosmetics from: ${this.cosmeticsPath}`);
+      console.log(`📂 __dirname is: ${__dirname}`);
       const data = await fs.readFile(this.cosmeticsPath, 'utf-8');
       this.cosmetics = JSON.parse(data);
       console.log(`✅ Loaded ${this.getAllCosmetics().length} cosmetics from config`);
+      console.log(`   Trails: ${this.cosmetics.trails?.length || 0}`);
+      console.log(`   Head Items: ${this.cosmetics.headItems?.length || 0}`);
+      console.log(`   Name Styles: ${this.cosmetics.nameStyles?.length || 0}`);
     } catch (error) {
       console.error('❌ Failed to load cosmetics config:', error);
+      console.error(`   Attempted path: ${this.cosmeticsPath}`);
+      console.error(`   Error details:`, error);
       // Initialize with empty config
       this.cosmetics = {
         trails: [],
