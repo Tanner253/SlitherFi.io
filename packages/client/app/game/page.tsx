@@ -130,20 +130,6 @@ export default function GamePage() {
   // Snow particles for falling snow effect (CHRISTMAS THEME)
   const snowParticlesRef = useRef<Array<{ x: number; y: number; speed: number; drift: number; size: number }>>([]);
 
-  // Contract Address
-  const CONTRACT_ADDRESS = 'JAxqon7z7uzjZ5f97amnytgrEDJMbVnPxRFqPzwwpump';
-  const [copied, setCopied] = useState(false);
-
-  const copyToClipboard = async () => {
-    try {
-      await navigator.clipboard.writeText(CONTRACT_ADDRESS);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  };
-
   // Ensure component only renders on client side
   useEffect(() => {
     setMounted(true);
@@ -2238,42 +2224,6 @@ export default function GamePage() {
             </motion.div>
           </div>
         )}
-
-        {/* Sticky Footer - Contract Address (Lobby Only) */}
-        <motion.div
-          initial={{ y: 100 }}
-          animate={{ y: 0 }}
-          className="fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-r from-green-900/95 via-emerald-900/95 to-green-900/95 backdrop-blur-lg border-t border-green-700/50 shadow-2xl"
-        >
-          <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs md:text-sm">
-              <span className="text-green-400 font-bold">$SnekFi CA:</span>
-              <code className="bg-green-950/50 px-3 py-1.5 rounded border border-green-700/50 text-green-300 font-mono text-xs">
-                {CONTRACT_ADDRESS.slice(0, 8)}...{CONTRACT_ADDRESS.slice(-6)}
-              </code>
-            </div>
-            <button
-              onClick={copyToClipboard}
-              className="px-4 py-1.5 bg-green-700 hover:bg-green-600 rounded-lg text-white text-xs font-bold transition-all flex items-center gap-2"
-            >
-              {copied ? (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                  Copy Full Address
-                </>
-              )}
-            </button>
-          </div>
-        </motion.div>
       </div>
     );
   }
